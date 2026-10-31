@@ -113,7 +113,9 @@ async function order(creds, token, path, body) {
     const st = await call(creds, token, "GET", `/order/${id}`);
     const status = Number(st.status);
     if (status === 666) return;
-    if (![0, 100].includes(status)) throw new Error(`Biến tần từ chối lệnh (mã ${st.status})`);
+    // MỚI (31/10/2026): mã lỗi theo tài liệu OrderRecordResponse.error
+    const ERR = { 501: "lệnh xung đột", 502: "sai loại sản phẩm", 505: "lỗi hệ thống", 510: "lỗi phân tích lệnh", 511: "phiên bản không hợp lệ", 530: "lệnh thất bại", 573: "không giao tiếp được với thiết bị" };
+    if (![0, 100].includes(status)) throw new Error(`Biến tần từ chối lệnh (trạng thái ${st.status}${st.error ? `, ${ERR[st.error] || "mã " + st.error}` : ""})`);
   }
   throw new Error("Biến tần chưa xác nhận lệnh sau 28 giây — kiểm tra lại sau.");
 }
@@ -139,13 +141,16 @@ export default {
       list.push(...(r.stationList || []));
       if ((r.stationList || []).length < 100) break;
     }
+    // SỬA (31/10/2026): theo tài liệu Deye, station/history granularity=2 loại trừ endAt → phải đặt endAt = ngày mai
+    // (trước đây startAt=endAt=hôm nay nên có thể trả rỗng → điện hôm nay = 0)
     const today = vnDate();
+    const tomorrow = vnDate(new Date(Date.now() + 86400e3));
     const out = [];
     for (const s of list) {
       let lt = {}, day = {};
       try { lt = await post(creds, token, "/station/latest", { stationId: s.id }); } catch {}
       try {
-        const h = await post(creds, token, "/station/history", { stationId: s.id, granularity: 2, startAt: today, endAt: today });
+        const h = await post(creds, token, "/station/history", { stationId: s.id, granularity: 2, startAt: today, endAt: tomorrow });
         day = (h.stationDataItems || [])[0] || {};
       } catch {}
       const t = isoFromAny(lt.lastUpdateTime || s.lastUpdateTime);
