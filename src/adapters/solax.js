@@ -46,7 +46,7 @@ async function inverterOf(creds, token, plantId) {
 }
 
 // Quy đổi dữ liệu thời gian thực của inverter + pin thành danh sách tên chuẩn để giao diện nhận
-function toList(creds, inv, bat) {
+function toList(creds, inv, bat, ex = {}) {
   const L = [];
   const add = (name, value, unit) => { if (value !== null && value !== undefined) L.push({ name, value, unit }); };
   const pv = inv.pvMap || {};
@@ -75,22 +75,40 @@ function toList(creds, inv, bat) {
   add("Inverter Temperature", num(inv.inverterTemperature), "℃");
   add("Total Power Factor", num(inv.totalPowerFactor), "");
   for (let i = 1; i <= 3; i++) add(`EPS Power L${i}`, toW(creds, inv[`EPSL${i}ActivePower`]), "W");
+  // Công suất AC từng pha + công suất tổng của inverter
+  for (let i = 1; i <= 3; i++) add(`AC Power L${i}`, toW(creds, inv[`acPower${i}`]), "W");
+  const eps = [1, 2, 3].map((i) => toW(creds, inv[`EPSL${i}ActivePower`])).filter((v) => v !== null);
+  if (eps.length) add("UPS Load Power", eps.reduce((a, b) => a + b, 0), "W");
+  add("Rated Power", ex.ratedW, "W");
+  if (RUN[inv.deviceStatus] || inv.deviceStatus != null) add("Inverter Status", RUN[inv.deviceStatus] || String(inv.deviceStatus), "");
+  add("Total Consumption Power", ex.loadW, "W");
+  add("Daily Consumption", ex.dailyLoad, "kWh");
+  add("Cumulative Consumption", ex.totalLoad, "kWh");
+  add("Daily Charging Energy", ex.dailyCharged, "kWh");
+  add("Daily Discharging Energy", ex.dailyDischarged, "kWh");
   if (bat) {
     add("SOC", num(bat.batterySOC), "%");
     add("SOH", num(bat.batterySOH), "%");
     const cp = num(bat.chargeDischargePower); // dương = sạc → app: dương = xả
     add("Battery Power", cp === null ? null : -cp, "W");
     add("Battery Voltage", num(bat.batteryVoltage), "V");
-    add("Battery Current", num(bat.batteryCurrent), "A");
+    const bc = num(bat.batteryCurrent); // SolaX: dương = sạc → app: dương = xả
+    add("Battery Current", bc === null ? null : -bc, "A");
+    add("Battery Remaining Energy", num(bat.batteryRemainings), "kWh");
+    add("Battery Rated Capacity", ex.batAh, "Ah");
     add("Battery Temperature", num(bat.batteryTemperature), "℃");
-    add("Total Charge Energy", num(bat.totalDevicCharge), "kWh");
-    add("Total Discharge Energy", num(bat.totalDeviceDischarge), "kWh");
+    add("Total Charge Energy", num(bat.totalDevicCharge) ?? ex.totalCharged, "kWh");
+    add("Total Discharge Energy", num(bat.totalDeviceDischarge) ?? ex.totalDischarged, "kWh");
     add("Total Battery Life Cycles", num(bat.batteryCycleTimes), "");
   }
   return L;
 }
 
 const BAD = new Set([103, 104]);
+// Tên dòng biến tần (deviceModel, dân dụng) theo Phụ lục 4 của tài liệu SolaX
+const MODEL = { 1: "X1-LX", 2: "X-Hybrid", 3: "X1-Hybrid-G3", 4: "X1-Boost/Air/Mini", 5: "X3-Hybrid-G1/G2", 6: "X3-20K/30K", 7: "X3-MIC/PRO", 8: "X1-Smart", 9: "X1-AC", 10: "A1-Hybrid", 11: "A1-FIT", 12: "A1", 13: "J1-ESS", 14: "X3-Hybrid-G4", 15: "X1-Hybrid-G4", 16: "X3-MIC/PRO-G2", 17: "X1-SPT", 18: "X1-Boost-G4", 19: "A1-HYB-G2", 20: "A1-AC-G2", 21: "A1-SMT-G2", 22: "X1-Mini-G4", 23: "X1-IES", 24: "X3-IES", 25: "X3-ULT", 26: "X1-SMART-G2", 31: "X3-AELIO", 32: "X3-HYB-G4 PRO", 33: "X3-NEO-LV", 34: "X1-VAST", 35: "X3-IES-P", 36: "J3-ULT-LV-16.5K", 37: "J3-ULT-30K", 38: "J1-ESS-HB-2", 39: "C3-IES", 40: "X3-IES-A", 41: "X1-IES-A", 43: "X3-ULT-GLV", 44: "X1-MINI-G4 PLUS", 46: "X1-Reno-LV", 47: "A1-HYB-G3", 50: "X-MS 2700", 100: "X3-FTH", 101: "X3-MGA-G2", 102: "X1-Hybrid-LV", 103: "X1-Lite-LV", 104: "X3-GRAND-HV", 105: "X3-FORTH-PLUS", 108: "X3-MIC-G3", 109: "X3-PRO-G3" };
+// Trạng thái biến tần (deviceStatus) theo Phụ lục 6
+const RUN = { 100: "Waiting", 101: "Self-check", 102: "Normal", 103: "Fault", 104: "Permanent Fault", 105: "Updating", 106: "EPS Check", 107: "EPS Mode", 108: "Self Test", 109: "Idle", 110: "Standby", 111: "PV Wake Up Battery", 112: "Generator Check", 113: "Generator Running", 114: "RSD Standby", 130: "VPP", 131: "TOU Self-use", 132: "TOU Charging", 133: "TOU Discharging", 134: "TOU Battery off", 135: "TOU Peak Shaving", 140: "Start", 150: "Self Use", 151: "Force Time Use", 152: "Back Up", 153: "Feed-in Priority", 154: "Demand", 155: "Const Power", 170: "Stop", 171: "Debug" };
 
 export default {
   brand: "solax",
@@ -149,12 +167,33 @@ export default {
   async fetchDetail(creds, cached, plantId) {
     const { token, fresh } = await getToken(creds, cached);
     const devs = await inverterOf(creds, token, plantId);
-    const sn = devs[0]?.deviceSn;
+    const dev = devs[0];
+    const sn = dev?.deviceSn;
     if (!sn) throw new Error("Không tìm thấy inverter của trạm trên SolaX Cloud");
     const inv = (await get(creds, token, "/openapi/v2/device/realtime_data", { snList: sn, deviceType: "1" }))?.[0] || {};
-    let bat = null;
+    let bat = null, rt = {}, batInfo = null;
     try { bat = (await get(creds, token, "/openapi/v2/device/realtime_data", { snList: sn, deviceType: "2", requestSnType: "1" }))?.[0] || null; } catch {}
-    const list = toList(creds, inv, bat);
-    return { list, serial: sn, time: inv.plantLocalTime, token: fresh };
+    try { rt = await get(creds, token, "/openapi/v2/plant/realtime_data", { plantId }); } catch {}
+    try { batInfo = (await allPages(creds, token, "/openapi/v2/device/page_device_info", { plantId, deviceType: "2" }))[0] || null; } catch {}
+    // Công suất tải = PV − (sạc +) − (bán +) ; điện tiêu thụ trong ngày = sản xuất + mua + xả − sạc − bán
+    const pvW = toW(creds, inv.MPPTTotalInputPower) ?? (inv.pvMap ? [1, 2, 3, 4, 5, 6].map((i) => toW(creds, inv.pvMap[`pv${i}Power`])).filter((v) => v !== null).reduce((a, b) => a + b, 0) : null);
+    const loadW = pvW === null ? null : Math.max(0, pvW - (num(bat?.chargeDischargePower) || 0) - (toW(creds, inv.gridPower) || 0));
+    const f = (k) => num(rt[k]);
+    const sum = (a, b, c, d, e) => [a, b, c, d, e].some((v) => v === null) ? null : Math.round((a + b + c - d - e) * 10) / 10;
+    const dailyLoad = sum(f("dailyYield"), f("dailyImported"), f("dailyDischarged"), f("dailyCharged"), f("dailyExported"));
+    const totalLoad = sum(f("totalYield"), f("totalImported"), f("totalDischarged"), f("totalCharged"), num(inv.totalExportEnergy));
+    // Dung lượng pin (Ah) quy đổi từ Wh danh định / điện áp (≈51,2V cho pin LFP 48V)
+    const wh = num(batInfo?.ratedCapacity);
+    const v = num(bat?.batteryVoltage);
+    const batAh = wh ? Math.round(wh / (v && v >= 40 && v <= 60 ? 51.2 : v || 51.2)) : null;
+    const ex = {
+      ratedW: dev?.ratedPower != null && num(dev.ratedPower) !== null ? Math.round(num(dev.ratedPower) * 1000) : null,
+      loadW, dailyLoad, totalLoad, batAh,
+      dailyCharged: f("dailyCharged"), dailyDischarged: f("dailyDischarged"), totalCharged: f("totalCharged"), totalDischarged: f("totalDischarged"),
+    };
+    const list = toList(creds, inv, bat, ex);
+    const model = MODEL[Number(dev.deviceModel)];
+    const device = { type: model ? `SolaX ${model}` : undefined, firmware: [dev.armVersion, dev.dspVersion].filter(Boolean).join(" / ") || undefined };
+    return { list, serial: sn, time: inv.plantLocalTime, token: fresh, device };
   },
 };

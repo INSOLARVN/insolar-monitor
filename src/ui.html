@@ -2,7 +2,15 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- SỬA (31/10/2026): khoá thu phóng (không zoom bằng 2 ngón/chạm đúp) + khai báo PWA -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="64x64" href="/icons/favicon-64.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="INSOLAR">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f1f3f7">
 <script>try{var t=localStorage.getItem("imTheme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 <title>INSOLAR Monitor</title>
@@ -67,7 +75,8 @@
   --v:#93b8ff; --w:#ff7b7e; --e:#f5b544; --ok:#55d98f; --off:#6b6b75; --danger:#ff7b7e; --danger-soft:rgba(255,123,126,.14);
   --tile-top:#5d8c50; --tile-top2:#477a3d; --tile-l:#33592c; --tile-r:#2a4a25; --bush:#2f6a2c; color-scheme:dark}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0}
+html,body{margin:0;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior-y:none}
+html{touch-action:pan-x pan-y}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--font);font-feature-settings:"tnum" 1,"cv11" 1;font-variant-numeric:tabular-nums;min-height:100vh;-webkit-font-smoothing:antialiased;touch-action:manipulation}
 html.theme-anim *,html.theme-anim *::before,html.theme-anim *::after{transition:background-color .45s ease,color .45s ease,border-color .45s ease,fill .45s ease,stroke .45s ease!important}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--hdr-solid)}
@@ -185,7 +194,7 @@ a{color:inherit;text-decoration:none}
 .echip span{display:block;font-size:12px;color:var(--muted)}
 .echip b{font-size:16px;font-weight:800}
 /* ---------- thanh tab kính + gạch sáng trượt ---------- */
-.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:25;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));pointer-events:none}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:25;transform:translate3d(0,0,0);-webkit-transform:translate3d(0,0,0);backface-visibility:hidden;-webkit-backface-visibility:hidden;will-change:transform;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));pointer-events:none}
 .tabbar .wrap{pointer-events:auto}
 .tabs{position:relative;display:flex;gap:2px;padding:6px;border-radius:26px;background:var(--tabbar);border:1px solid var(--line);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:0 18px 40px -16px rgba(0,0,0,.45),inset 0 1px 0 var(--hi)}
 .tab-ind{position:absolute;top:6px;bottom:6px;left:0;width:0;border-radius:20px;background:var(--glass);border:1px solid var(--line);box-shadow:inset 0 1px 0 var(--hi),0 6px 16px -8px rgba(0,0,0,.35);transition:transform .5s cubic-bezier(.7,0,.2,1),width .5s cubic-bezier(.7,0,.2,1);z-index:0}
@@ -543,6 +552,10 @@ async function api(path, opt = {}) {
 // ================= Trạng thái & router =================
 const S = { stations: [], detail: null, online: false, st: null, timer: null, hist: { range: "day", date: vnDate() }, charts: [], profiles: null, brands: null, invQ: "" };
 const app = $("#app");
+// SỬA (31/10/2026): khoá thu phóng trên iOS (Safari bỏ qua user-scalable) + đăng ký PWA
+["gesturestart", "gesturechange", "gestureend"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
+document.addEventListener("touchmove", (e) => { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
 function go(h) { if (location.hash === h) render(); else location.hash = h; }
 window.addEventListener("hashchange", render);
 

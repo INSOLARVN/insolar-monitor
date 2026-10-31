@@ -241,6 +241,8 @@ const CLOUD_MAP = [
   [/^total gen power$/i, (d, v) => (d.gen.power = v)],
   [/^gen voltage$/i, (d, v) => (d.gen.voltage = v)],
   [/^daily production generator$/i, (d, v) => (d.gen.today_kwh = v)],
+  [/^ac power l(\d)$/i, (d, v, mm) => (ph(d.grid, +mm[1]).w = v)], // SolaX: công suất AC từng pha
+  [/^battery rated capacity \(kwh\)$/i, () => {}],
 ];
 const str = (d, i) => { let x = d.pv.strings.find((s) => s.n === i); if (!x) { x = { n: i, v: null, a: null, w: null }; d.pv.strings.push(x); } return x; };
 const ph = (o, l) => { let x = o.phases.find((p) => p.l === l); if (!x) { x = { l, v: null, a: null, w: null }; o.phases.push(x); } return x; };

@@ -164,7 +164,7 @@ async function stationDetail(env, st, ctx) {
     const creds = await decrypt(env.ENC_KEY, acc.creds_enc);
     const cached = acc.token_enc ? await decrypt(env.ENC_KEY, acc.token_enc).catch(() => null) : null;
     const r = await ad.fetchDetail(creds, cached, st.ext_id);
-    const d = fromCloudList(r.list, acc.brand, { serial: r.serial, manufacturer: ad.label });
+    const d = fromCloudList(r.list, acc.brand, { serial: r.serial, manufacturer: ad.label, ...(r.device || {}) });
     d.source = acc.brand;
     // MỚI (31/10/2026): cài đặt từ xa qua API điều khiển của cloud hãng (Deye Cloud, SolisCloud)
     if (r.settings?.length && ad.writeSetting) {
