@@ -52,25 +52,36 @@ const post = (creds, token, path, body) => call(creds, token, "POST", path, body
 const INV_PREF = [/^INVERTER$/i, /INVERTER|STORAGE|PCS|HYBRID/i];
 const NOT_INV = /COLLECTOR|DTU|METER|BATTERY|RELAY|WEATHER|OPTIMIZER|PV_MODULE/i;
 async function inverterSns(creds, token, stationId, diag = []) {
-  // SỬA (31/10/2026): station/device size 100 → HTTP 500 (giữ 20 như cũ); listWithDevice tối đa 50/trang → duyệt nhiều trang
-  const tries = [["/station/device", { stationIds: [Number(stationId)], page: 1, size: 20 }]];
-  for (let pg = 1; pg <= 10; pg++) tries.push(["/station/listWithDevice", { page: pg, size: 50 }]);
-  let lwdOk = false;
-  for (const [path, body] of tries) {
-    if (path === "/station/listWithDevice" && lwdOk) break;
-    try {
-      const r = await post(creds, token, path, body);
-      const list = r.deviceListItems || (r.stationList || []).filter((s) => String(s.id) === String(stationId)).flatMap((s) => s.deviceListItems || []);
-      if (path === "/station/listWithDevice") { const total = Number(r.total) || 0; if (!total || body.page * body.size >= total) lwdOk = true; if (!list.length && !lwdOk) continue; }
-      diag.push(`${path}: ${list.length} thiết bị [${[...new Set(list.map((x) => x.deviceType))].join(",") || "-"}]`);
-      for (const re of INV_PREF) {
-        const sns = list.filter((x) => x.deviceSn && re.test(String(x.deviceType || "INVERTER"))).map((x) => x.deviceSn);
-        if (sns.length) return sns;
+  // SỬA (31/10/2026): station/device hay lỗi 500 → thử 1 lần rồi chuyển sang listWithDevice (tối đa 50/trang, duyệt tới khi gặp trạm).
+  // Tổng số trạm của listWithDevice nằm ở "stationTotal" (không phải "total").
+  const pick = (list) => {
+    for (const re of INV_PREF) {
+      const sns = list.filter((x) => x.deviceSn && re.test(String(x.deviceType || "INVERTER"))).map((x) => x.deviceSn);
+      if (sns.length) return sns;
+    }
+    return list.filter((x) => x.deviceSn && !NOT_INV.test(String(x.deviceType || ""))).map((x) => x.deviceSn);
+  };
+  const types = (list) => [...new Set(list.map((x) => x.deviceType))].join(",") || "-";
+  try {
+    const r = await post(creds, token, "/station/device", { stationIds: [Number(stationId)], page: 1, size: 20 });
+    const list = r.deviceListItems || [];
+    diag.push(`/station/device: ${list.length} thiết bị [${types(list)}]`);
+    const sns = pick(list);
+    if (sns.length) return sns;
+  } catch (e) { diag.push(`/station/device: ${e.message}`); }
+  try {
+    for (let page = 1; page <= 40; page++) {
+      const r = await post(creds, token, "/station/listWithDevice", { page, size: 50 });
+      const sts = r.stationList || [];
+      const mine = sts.find((s) => String(s.id) === String(stationId));
+      if (mine) {
+        const list = mine.deviceListItems || [];
+        diag.push(`/station/listWithDevice: ${list.length} thiết bị [${types(list)}]`);
+        return pick(list);
       }
-      const other = list.filter((x) => x.deviceSn && !NOT_INV.test(String(x.deviceType || ""))).map((x) => x.deviceSn);
-      if (other.length) return other;
-    } catch (e) { diag.push(`${path}: ${e.message}`); if (path === "/station/listWithDevice") break; }
-  }
+      if (sts.length < 50 || page * 50 >= (Number(r.stationTotal) || 0)) { diag.push(`/station/listWithDevice: không thấy trạm ${stationId} trong ${page} trang`); break; }
+    }
+  } catch (e) { diag.push(`/station/listWithDevice: ${e.message}`); }
   return [];
 }
 
