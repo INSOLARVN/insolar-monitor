@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+firmware/.pio/
+tools/gateway-sim.bundle.mjs

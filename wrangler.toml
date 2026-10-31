@@ -1,0 +1,38 @@
+name = "insolar-monitor"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Đồng bộ dữ liệu từ cloud các hãng mỗi 5 phút
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "insolar-monitor"
+database_id = "2cc76a3a-742f-4d12-8371-26a2b0d315ca"
+
+# Mỗi gateway INSOLAR (ESP32) giữ 1 kết nối WebSocket tới Durable Object này
+[[durable_objects.bindings]]
+name = "GATEWAY"
+class_name = "GatewayHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GatewayHub"]
+
+# Tên miền riêng (bỏ dấu # và sửa lại):
+# routes = [{ pattern = "monitor.tenmien.vn", custom_domain = true }]
+
+# Bí mật (đặt bằng lệnh, KHÔNG ghi vào file):
+#   npx wrangler secret put ADMIN_PASSWORD
+#   npx wrangler secret put ENC_KEY
+
+# MỚI (31/10/2026): ảnh tĩnh (ảnh ngôi nhà theo giờ) phục vụ thẳng từ Cloudflare, không tính vào dung lượng Worker
+[assets]
+directory = "./public"
+
+# Firmware gateway được nhúng để nạp trực tiếp từ trình duyệt (trang /flash)
+[[rules]]
+type = "Data"
+globs = ["**/*.bin"]
+fallthrough = true

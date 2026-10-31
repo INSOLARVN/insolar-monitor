@@ -1,0 +1,16 @@
+{
+  "name": "insolar-monitor",
+  "version": "1.0.0",
+  "description": "INSOLAR Monitor — giám sát & cài đặt điện mặt trời đa hãng (Cloudflare Workers)",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^4.156.0"
+  },
+  "private": true
+}

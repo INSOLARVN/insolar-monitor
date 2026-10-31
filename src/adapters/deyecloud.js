@@ -1,0 +1,217 @@
+// Deye Cloud OpenAPI v1.0 — tạo app tại developer.deyecloud.com để lấy appId/appSecret
+import { sha256Hex } from "../crypto.js";
+import { fetchJson, station, num, isoFromAny, vnDate, statusFromTime } from "./util.js";
+
+const base = (c) => (c.api_url || "https://eu1-developer.deyecloud.com/v1.0").replace(/\/$/, "");
+
+async function getToken(creds, cached) {
+  if (cached?.token && cached.exp > Date.now() + 3600e3) return { token: cached.token, fresh: null };
+  const pw = /^[a-f0-9]{64}$/.test(creds.password) ? creds.password : await sha256Hex(creds.password);
+  const body = { appSecret: creds.app_secret, password: pw };
+  if (creds.username.includes("@")) body.email = creds.username;
+  else { body.mobile = creds.username; body.countryCode = "84"; }
+  if (creds.company_id) body.companyId = creds.company_id;
+  const res = await fetchJson(`${base(creds)}/account/token?appId=${encodeURIComponent(creds.app_id)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const token = res.accessToken || res.data?.accessToken;
+  if (!token) throw new Error(`Deye Cloud: ${res.msg || "không lấy được token"}`);
+  const exp = Date.now() + (num(res.expiresIn || res.data?.expiresIn) || 5184000) * 1000;
+  return { token, fresh: { token, exp } };
+}
+
+// Mã trả về thành công của Deye Cloud (bảng mã trên cổng developer)
+const OK_CODES = new Set([0, 1000000, 1106000]);
+const NO_PERMISSION = new Set([2101027, 2101042]);
+const BUSY = new Set([2104004]);
+const OFFLINE = new Set([2104006]);
+
+async function call(creds, token, method, path, body) {
+  const url = `${base(creds)}${path}`;
+  const res = await fetchJson(url, {
+    method,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: method === "GET" ? undefined : JSON.stringify(body || {}),
+  });
+  const code = res.code !== undefined && res.code !== null ? Number(res.code) : null;
+  if (res.success === false || (code !== null && !Number.isNaN(code) && !OK_CODES.has(code))) {
+    if (NO_PERMISSION.has(code)) throw new Error("Tài khoản chưa được Deye cấp quyền điều khiển thiết bị này (bật trong Deye Cloud → thiết bị → quyền điều khiển).");
+    if (BUSY.has(code)) throw new Error("Biến tần đang xử lý lệnh khác, thử lại sau ít giây.");
+    if (OFFLINE.has(code)) throw new Error("Biến tần đang ngoại tuyến trên Deye Cloud.");
+    throw new Error(`Deye ${path}: ${res.msg || code}`);
+  }
+  // Một số API để dữ liệu trong "data", số khác để ở gốc
+  return res.data && typeof res.data === "object" && !Array.isArray(res.data) ? { ...res, ...res.data } : res;
+}
+const post = (creds, token, path, body) => call(creds, token, "POST", path, body);
+
+async function inverterSns(creds, token, stationId) {
+  for (const [path, body] of [
+    ["/station/device", { stationIds: [Number(stationId)], page: 1, size: 20 }],
+    ["/station/listWithDevice", { page: 1, size: 100, deviceType: "INVERTER" }],
+  ]) {
+    try {
+      const r = await post(creds, token, path, body);
+      const list = r.deviceListItems || (r.stationList || []).filter((s) => String(s.id) === String(stationId)).flatMap((s) => s.deviceListItems || []);
+      const sns = list.filter((x) => !x.deviceType || /INVERTER/i.test(x.deviceType)).map((x) => x.deviceSn);
+      if (sns.length) return sns;
+    } catch {}
+  }
+  return [];
+}
+
+// ---------- Cài đặt từ xa qua Deye Cloud (lệnh "order" bất đồng bộ) ----------
+// Tham khảo: github.com/maxbanton/hass-deye-cloud (MIT) — các endpoint /order/* và /config/*.
+const WORK = { SELLING_FIRST: "Export First", ZERO_EXPORT_TO_LOAD: "Zero Export To Load", ZERO_EXPORT_TO_CT: "Zero Export To CT" };
+const PATTERN = { LOAD_FIRST: "Load First", BATTERY_FIRST: "Battery First" };
+const rev = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [v, k]));
+const CHG_OPTS = ["Disabled", "Grid", "Generator", "Both"];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const hhmm = (v) => { const s = String(v ?? "").trim(); if (s.includes(":")) { const [h, m] = s.split(":"); return `${String(+h).padStart(2, "0")}:${String(+m || 0).padStart(2, "0")}`; } const d = s.padStart(4, "0"); return `${d.slice(0, 2)}:${d.slice(2, 4)}`; };
+
+async function readConfig(creds, token, sn) {
+  const get = async (path) => { try { return await post(creds, token, path, { deviceSn: sn }); } catch { return {}; } };
+  const [sys, bat, tou] = await Promise.all([get("/config/system"), get("/config/battery"), get("/config/tou")]);
+  return { sys, bat, tou };
+}
+
+function settingsFrom(cfg) {
+  const { sys, bat, tou } = cfg, out = [];
+  const add = (o) => out.push({ group: "Settings", uom: null, ...o });
+  if (sys.systemWorkMode !== undefined) add({ key: "work_mode", name: "Work Mode", group: "Work Mode", platform: "select", options: Object.values(WORK), value: WORK[sys.systemWorkMode] ?? sys.systemWorkMode });
+  if (sys.energyPattern !== undefined) add({ key: "energy_pattern", name: "Energy Pattern", group: "Work Mode", platform: "select", options: Object.values(PATTERN), value: PATTERN[sys.energyPattern] ?? sys.energyPattern });
+  add({ key: "solar_sell", name: "Export Surplus", group: "Work Mode", platform: "switch", on: 1, off: 0, bit: null, value: sys.solarSellAction === undefined ? null : /on|true|1/i.test(String(sys.solarSellAction)) ? 1 : 0 });
+  add({ key: "max_sell_power", name: "Export Surplus Power", group: "Work Mode", platform: "number", uom: "W", min: 0, max: 30000, step: 100, value: num(sys.maxSellPower) });
+  add({ key: "max_charge", name: "Battery Max Charging Current", platform: "number", uom: "A", min: 0, max: 240, step: 1, value: num(bat.maxChargeCurrent) });
+  add({ key: "max_discharge", name: "Battery Max Discharging Current", platform: "number", uom: "A", min: 0, max: 240, step: 1, value: num(bat.maxDischargeCurrent) });
+  add({ key: "grid_charge_a", name: "Battery Grid Charging Current", platform: "number", uom: "A", min: 0, max: 240, step: 1, value: num(bat.gridChargeAmpere) });
+  add({ key: "batt_low", name: "Battery Low SOC", platform: "number", uom: "%", min: 5, max: 100, step: 1, value: num(bat.battLowCapacity) });
+  const items = tou.timeUseSettingItems || [];
+  if (items.length) {
+    add({ key: "tou_switch", name: "Time of Use", group: "Work Mode", platform: "switch", on: 1, off: 0, bit: null, value: tou.touAction === undefined ? null : /on|true|1/i.test(String(tou.touAction)) ? 1 : 0 });
+    items.slice(0, 6).forEach((it, i) => {
+      const n = i + 1, g = "Work Mode";
+      add({ key: `tou_${n}_time`, name: `Program ${n} Time`, group: g, platform: "time", value: hhmm(it.time) });
+      add({ key: `tou_${n}_power`, name: `Program ${n} Power`, group: g, platform: "number", uom: "W", min: 0, max: 30000, step: 100, value: num(it.power) });
+      add({ key: `tou_${n}_soc`, name: `Program ${n} SOC`, group: g, platform: "number", uom: "%", min: 0, max: 100, step: 1, value: num(it.soc) });
+      const gc = !!it.enableGridCharge, gen = !!it.enableGeneration;
+      add({ key: `tou_${n}_chg`, name: `Program ${n} Charging`, group: g, platform: "select", options: CHG_OPTS, value: gc && gen ? "Both" : gc ? "Grid" : gen ? "Generator" : "Disabled" });
+    });
+  }
+  return out;
+}
+
+async function order(creds, token, path, body) {
+  const r = await post(creds, token, path, body);
+  const id = r.orderId;
+  if (!id) return;
+  const end = Date.now() + 28000;
+  while (Date.now() < end) {
+    await sleep(2000);
+    const st = await call(creds, token, "GET", `/order/${id}`);
+    const status = Number(st.status);
+    if (status === 666) return;
+    if (![0, 100].includes(status)) throw new Error(`Biến tần từ chối lệnh (mã ${st.status})`);
+  }
+  throw new Error("Biến tần chưa xác nhận lệnh sau 28 giây — kiểm tra lại sau.");
+}
+
+export default {
+  brand: "deyecloud",
+  label: "Deye Cloud",
+  fields: [
+    { key: "app_id", label: "App ID" },
+    { key: "app_secret", label: "App Secret", type: "password" },
+    { key: "username", label: "Email / SĐT Deye Cloud" },
+    { key: "password", label: "Mật khẩu Deye Cloud", type: "password" },
+    { key: "company_id", label: "Company ID (tài khoản doanh nghiệp)", optional: true },
+    { key: "api_url", label: "API URL", placeholder: "https://eu1-developer.deyecloud.com/v1.0", optional: true },
+  ],
+  help: "Đăng ký tại developer.deyecloud.com → tạo Application → lấy App ID, App Secret. Tài khoản Châu Á thường dùng máy chủ eu1.",
+
+  async fetchStations(creds, cached) {
+    const { token, fresh } = await getToken(creds, cached);
+    const list = [];
+    for (let page = 1; page <= 20; page++) {
+      const r = await post(creds, token, "/station/list", { page, size: 100 });
+      list.push(...(r.stationList || []));
+      if ((r.stationList || []).length < 100) break;
+    }
+    const today = vnDate();
+    const out = [];
+    for (const s of list) {
+      let lt = {}, day = {};
+      try { lt = await post(creds, token, "/station/latest", { stationId: s.id }); } catch {}
+      try {
+        const h = await post(creds, token, "/station/history", { stationId: s.id, granularity: 2, startAt: today, endAt: today });
+        day = (h.stationDataItems || [])[0] || {};
+      } catch {}
+      const t = isoFromAny(lt.lastUpdateTime || s.lastUpdateTime);
+      const conn = String(s.connectionStatus || "").toUpperCase();
+      let status = conn === "ALL_OFFLINE" || conn === "OFFLINE" ? "offline" : statusFromTime(t);
+      if (/ALARM|FAULT|ERROR/.test(conn)) status = "alarm";
+      out.push(station({
+        ext_id: s.id,
+        name: s.name,
+        address: s.locationAddress, lat: s.locationLat, lon: s.locationLng,
+        capacity_kwp: s.installedCapacity,
+        status,
+        pv_power_w: lt.generationPower ?? s.generationPower,
+        load_power_w: lt.consumptionPower,
+        grid_power_w: lt.gridPower ?? lt.wirePower,
+        battery_soc: lt.batterySOC ?? s.batterySOC,
+        today_kwh: day.generationValue,
+        total_kwh: lt.generationTotal,
+        data_time: t,
+      }));
+    }
+    return { stations: out, token: fresh };
+  },
+
+  async fetchDetail(creds, cached, stationId) {
+    const { token, fresh } = await getToken(creds, cached);
+    const sns = await inverterSns(creds, token, stationId);
+    if (!sns.length) throw new Error("Không tìm thấy inverter của trạm trên Deye Cloud");
+    const r = await post(creds, token, "/device/latest", { deviceList: sns.slice(0, 1) });
+    const dd = (r.deviceDataList || [])[0] || {};
+    const human = (k) => String(k).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/(\D)(\d)/g, "$1$2");
+    const list = (dd.dataList || []).map((x) => ({ key: x.key, name: human(x.key), value: x.value, unit: x.unit }));
+    const sn = dd.deviceSn || sns[0];
+    let settings = null, settingsError = null;
+    try { settings = settingsFrom(await readConfig(creds, token, sn)); } catch (e) { settingsError = e.message; }
+    return { list, serial: sn, time: dd.collectionTime, token: fresh, settings, settingsError };
+  },
+
+  // Ghi 1 cài đặt. cur = danh sách cài đặt đang hiển thị (để lấy giá trị cũ khi ghi lịch TOU)
+  async writeSetting(creds, cached, stationId, key, value) {
+    const { token } = await getToken(creds, cached);
+    const sn = (await inverterSns(creds, token, stationId))[0];
+    if (!sn) throw new Error("Không tìm thấy inverter của trạm trên Deye Cloud");
+    const n = Number(value);
+    const needNum = (min, max) => { if (!Number.isFinite(n) || n < min || n > max) throw new Error(`Giá trị phải từ ${min} đến ${max}`); return Math.round(n); };
+    const onOff = value === true || value === "on" || value === 1 ? "on" : "off";
+    let m;
+    if (key === "work_mode") { const v = rev(WORK)[value]; if (!v) throw new Error("Chế độ không hợp lệ"); return order(creds, token, "/order/sys/workMode/update", { deviceSn: sn, workMode: v }); }
+    if (key === "energy_pattern") { const v = rev(PATTERN)[value]; if (!v) throw new Error("Lựa chọn không hợp lệ"); return order(creds, token, "/order/sys/energyPattern/update", { deviceSn: sn, energyPattern: v }); }
+    if (key === "solar_sell") return order(creds, token, "/order/sys/solarSell/control", { deviceSn: sn, action: onOff });
+    if (key === "max_sell_power") return order(creds, token, "/order/sys/power/update", { deviceSn: sn, powerType: "MAX_SELL_POWER", value: needNum(0, 30000) });
+    const BAT = { max_charge: ["MAX_CHARGE_CURRENT", 0, 240], max_discharge: ["MAX_DISCHARGE_CURRENT", 0, 240], grid_charge_a: ["GRID_CHARGE_AMPERE", 0, 240], batt_low: ["BATT_LOW", 5, 100] };
+    if (BAT[key]) return order(creds, token, "/order/battery/parameter/update", { deviceSn: sn, paramterType: BAT[key][0], value: needNum(BAT[key][1], BAT[key][2]) });
+    if (key === "tou_switch") return order(creds, token, "/order/sys/tou/switch", { deviceSn: sn, action: onOff });
+    if ((m = key.match(/^tou_(\d)_(time|power|soc|chg)$/))) {
+      // Lịch TOU phải gửi đủ 6 mốc: đọc lịch hiện tại rồi sửa đúng 1 ô
+      const cfg = await post(creds, token, "/config/tou", { deviceSn: sn });
+      const items = (cfg.timeUseSettingItems || []).map((it) => ({ time: hhmm(it.time), power: num(it.power) ?? 0, soc: num(it.soc) ?? 0, voltage: num(it.voltage) ?? 0, enableGridCharge: !!it.enableGridCharge, enableGeneration: !!it.enableGeneration }));
+      const it = items[Number(m[1]) - 1];
+      if (!it) throw new Error("Không đọc được lịch sạc xả hiện tại");
+      if (m[2] === "time") { if (!/^\d{1,2}:\d{2}$/.test(String(value))) throw new Error("Giờ phải dạng HH:MM"); it.time = hhmm(value); }
+      if (m[2] === "power") it.power = needNum(0, 30000);
+      if (m[2] === "soc") it.soc = needNum(0, 100);
+      if (m[2] === "chg") { if (!CHG_OPTS.includes(value)) throw new Error("Lựa chọn không hợp lệ"); it.enableGridCharge = value === "Grid" || value === "Both"; it.enableGeneration = value === "Generator" || value === "Both"; }
+      return order(creds, token, "/order/sys/tou/update", { deviceSn: sn, timeUseSettingItems: items });
+    }
+    throw new Error("Cài đặt này chưa hỗ trợ qua Deye Cloud");
+  },
+};

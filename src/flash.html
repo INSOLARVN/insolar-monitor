@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nạp firmware gateway</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;800&display=swap" rel="stylesheet">
+<script type="module" src="https://unpkg.com/esp-web-tools@10.0.1/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#f2f6fb;--card:#fff;--ink:#0f1d2e;--muted:#6b7a90;--brand:#0b7a55;--line:#e2e8f1}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#131c2c;--ink:#e8eef7;--muted:#8a99ae;--brand:#34c48d;--line:#233149}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Be Vietnam Pro",system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:24px 16px}
+.card{background:var(--card);border-radius:20px;padding:18px;margin-top:14px;border:1px solid var(--line)}
+h1{font-size:22px;margin:0}
+ol{padding-left:20px}li{margin:6px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left}
+esp-web-install-button button,button{background:var(--brand);color:#fff;border:0;border-radius:14px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer}
+.m{color:var(--muted);font-size:13.5px}
+</style></head><body><main>
+<h1>Nạp firmware INSOLAR Gateway</h1>
+<p class="m">Dùng Chrome hoặc Edge trên máy tính. Cắm ESP32 bằng cáp USB dữ liệu.</p>
+<div class="card"><esp-web-install-button manifest="/flash/manifest.json"><button slot="activate">Kết nối và nạp firmware</button>
+<span slot="unsupported">Trình duyệt này không hỗ trợ nạp qua USB. Hãy dùng Chrome/Edge trên máy tính.</span></esp-web-install-button>
+<p class="m">Nếu không thấy cổng COM: cài driver CP210x hoặc CH340 tùy loại mạch, rồi thử lại.</p></div>
+<div class="card"><b>Sau khi nạp</b><ol>
+<li>ESP32 phát WiFi <b>INSOLAR-GW</b> (mật khẩu <b>insolar123</b>). Kết nối bằng điện thoại.</li>
+<li>Trang cấu hình tự mở (hoặc vào 192.168.4.1). Chọn WiFi nhà khách, nhập <b>Máy chủ</b>, <b>Gateway ID</b>, <b>Khóa</b> lấy ở mục Gateway trong app.</li>
+<li>Lưu. Đèn xanh trên mạch ngừng nháy khi đã kết nối máy chủ.</li>
+<li>Giữ nút BOOT 5 giây để xóa cấu hình và cài lại.</li></ol></div>
+<div class="card"><b>Sơ đồ nối dây</b>
+<table><tr><th>Module</th><th>Chân module</th><th>ESP32</th></tr>
+<tr><td>RS485 inverter (MAX485/MAX3485)</td><td>RO · DI · DE+RE</td><td>GPIO16 · GPIO17 · GPIO4</td></tr>
+<tr><td>CAN (SN65HVD230)</td><td>CTX · CRX</td><td>GPIO21 · GPIO22</td></tr>
+<tr><td>RS485/TTL BMS</td><td>RO · DI · DE+RE</td><td>GPIO26 · GPIO27 · GPIO25</td></tr>
+<tr><td>Nguồn</td><td>3V3 · GND</td><td>3V3 · GND (module 3.3V)</td></tr></table>
+<p class="m">CAN-H/CAN-L của SN65HVD230 nối song song vào dây CAN giữa pin và inverter (chế độ chỉ nghe, không gửi gì lên bus). A/B của RS485 nối vào cổng Modbus/RS485 của inverter (Deye: cổng "Modbus" hoặc "Meter-485" tuỳ dòng).</p></div>
+</main></body></html>
