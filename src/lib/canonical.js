@@ -221,6 +221,26 @@ const CLOUD_MAP = [
   [/^ac temperature|^inverter temperature|^igbt temperature/i, (d, v) => (d.device.temp_ac = v)],
   [/^rated power$/i, (d, v) => (d.device.rated_power = v)],
   [/^inverter status$|^running status$|^state$/i, (d, v) => (d.device.state = v)],
+  // MỚI (31/10/2026): tên thông số thật của Deye Cloud (đối chiếu dữ liệu trạm thật) — trước đây không khớp nên hiện "--"
+  [/^pv daily power generation|^daily active production$/i, (d, v) => (d.pv.today_kwh = v)],
+  [/^pv cumulative power generation|^total active production$/i, (d, v) => (d.pv.total_kwh = v)],
+  [/^ac voltage rua$|^grid voltage l1l2$/i, (d, v) => (ph(d.grid, 1).v = v)],
+  [/^ac current rua$|^grid current l1l2$/i, (d, v) => (ph(d.grid, 1).a = v)],
+  [/^daily grid feed in$/i, (d, v) => (d.grid.today_export = v)],
+  [/^cumulative grid feed in$/i, (d, v) => (d.grid.total_export = v)],
+  [/^cumulative energy purchased$/i, (d, v) => (d.grid.total_import = v)],
+  [/^external ct power/i, (d, v) => (d.grid.ct_power = v)],
+  [/^load voltage l1l2$/i, (d, v) => (ph(d.load, 1).v = v)],
+  [/^cumulative consumption$/i, (d, v) => (d.load.total_kwh = v)],
+  [/^ups load power$/i, (d, v) => (d.load.ups_power = v)],
+  [/^total charge energy$/i, (d, v) => (d.battery.total_charge = v)],
+  [/^total discharge energy$/i, (d, v) => (d.battery.total_discharge = v)],
+  [/^battery rated capacity$/i, (d, v) => (d.battery.capacity_ah = v)],
+  [/^charge current limit$/i, (d, v) => (d.battery.charge_limit = v)],
+  [/^discharge current limit$/i, (d, v) => (d.battery.discharge_limit = v)],
+  [/^total gen power$/i, (d, v) => (d.gen.power = v)],
+  [/^gen voltage$/i, (d, v) => (d.gen.voltage = v)],
+  [/^daily production generator$/i, (d, v) => (d.gen.today_kwh = v)],
 ];
 const str = (d, i) => { let x = d.pv.strings.find((s) => s.n === i); if (!x) { x = { n: i, v: null, a: null, w: null }; d.pv.strings.push(x); } return x; };
 const ph = (o, l) => { let x = o.phases.find((p) => p.l === l); if (!x) { x = { l, v: null, a: null, w: null }; o.phases.push(x); } return x; };

@@ -193,8 +193,26 @@ async function stationDetail(env, st, ctx) {
 // ---------- Lịch sử ----------
 const vnToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 
-async function history(env, st, range, date) {
+// MỚI (31/10/2026): lịch sử lấy từ cloud hãng nếu adapter hỗ trợ (Deye); lỗi/rỗng thì dùng dữ liệu app tự lưu
+async function cloudHistory(env, st, range, d, ctx) {
+  try {
+    if (!st.account_id || st.gateway_id) return null;
+    const acc = await env.DB.prepare("SELECT * FROM accounts WHERE id=?1").bind(st.account_id).first();
+    const ad = acc && ADAPTERS[acc.brand];
+    if (!ad?.fetchHistory) return null;
+    const creds = await decrypt(env.ENC_KEY, acc.creds_enc);
+    const cached = acc.token_enc ? await decrypt(env.ENC_KEY, acc.token_enc).catch(() => null) : null;
+    const r = await ad.fetchHistory(creds, cached, st.ext_id, range, d);
+    if (r.token) ctx?.waitUntil?.(env.DB.prepare("UPDATE accounts SET token_enc=?2 WHERE id=?1").bind(acc.id, await encrypt(env.ENC_KEY, r.token)).run());
+    return r;
+  } catch { return null; }
+}
+
+async function history(env, st, range, date, ctx) {
   const d = /^\d{4}-\d{2}-\d{2}$/.test(date || "") ? date : vnToday();
+  const cloud = await cloudHistory(env, st, range, d, ctx);
+  if (cloud?.bars?.length) return { range, date: d, bars: cloud.bars };
+  if (cloud?.points?.length && range !== "month" && range !== "year") return { range: "day", date: d, points: cloud.points };
   if (range === "month" || range === "year") {
     const from = range === "month" ? d.slice(0, 7) + "-01" : d.slice(0, 4) + "-01-01";
     const toDate = new Date(from + "T00:00:00+07:00");
@@ -284,7 +302,7 @@ async function api(req, env, url, ctx) {
   if (m && method === "GET") {
     const st = await env.DB.prepare(`SELECT ${STATION_COLS} FROM stations s LEFT JOIN accounts a ON a.id=s.account_id WHERE s.share_token=?1`).bind(m[1]).first();
     if (!st) return json({ error: "Không tìm thấy" }, 404);
-    if (m[2]) return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date")));
+    if (m[2]) return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date"), ctx));
     const det = await stationDetail(env, st, ctx);
     if (det.detail) { det.detail.settings = []; det.detail.params = []; }
     const { customer, phone, note, share_token, gateway_id, account_id, ext_id, account_label, lat, lon, ...pub } = st;
@@ -313,7 +331,7 @@ async function api(req, env, url, ctx) {
     const sub = m[2];
     if (!sub && method === "GET") return json(st);
     if (sub === "detail") return json({ ...(await stationDetail(env, st, ctx)), weather: await weatherFor(env, st) });
-    if (sub === "history") return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date")));
+    if (sub === "history") return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date"), ctx));
     if (sub === "commands") {
       const { results } = await env.DB.prepare("SELECT * FROM commands WHERE station_id=?1 ORDER BY id DESC LIMIT 50").bind(st.id).all();
       return json(results);

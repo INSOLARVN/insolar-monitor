@@ -213,6 +213,38 @@ export default {
     return { list, serial: sn, time: dd.collectionTime, token: fresh, settings, settingsError };
   },
 
+  // MỚI (31/10/2026): lịch sử lấy thẳng từ Deye Cloud (station/history) — không phải đợi app tự tích luỹ.
+  // ngày: granularity 1 (theo khung công suất); tháng: granularity 2 (từng ngày); năm: granularity 3 (từng tháng). endAt bị loại trừ.
+  async fetchHistory(creds, cached, stationId, range, date) {
+    const { token, fresh } = await getToken(creds, cached);
+    const id = Number(stationId);
+    const addDays = (d, k) => vnDate(new Date(new Date(d + "T00:00:00+07:00").getTime() + k * 86400e3));
+    const bar = (it, label, day) => ({ label, day, pv: num(it.generationValue), load: num(it.consumptionValue), imp: num(it.purchaseValue), exp: num(it.gridValue), chg: num(it.chargeValue), dis: num(it.dischargeValue) });
+    if (range === "month") {
+      const from = date.slice(0, 7) + "-01";
+      const nm = new Date(from + "T00:00:00Z"); nm.setUTCMonth(nm.getUTCMonth() + 1);
+      const to = nm.toISOString().slice(0, 10);
+      const h = await post(creds, token, "/station/history", { stationId: id, granularity: 2, startAt: from, endAt: to });
+      const bars = (h.stationDataItems || []).map((it, i) => { const dd = /^\d{4}-\d{2}-\d{2}/.test(String(it.timeStamp)) ? String(it.timeStamp).slice(0, 10) : addDays(from, i); return bar(it, dd.slice(8), dd); });
+      return { bars, token: fresh };
+    }
+    if (range === "year") {
+      const y = Number(date.slice(0, 4));
+      const h = await post(creds, token, "/station/history", { stationId: id, granularity: 3, startAt: `${y}-01`, endAt: `${y + 1}-01` });
+      const bars = (h.stationDataItems || []).slice(0, 12).map((it, i) => bar(it, String(i + 1).padStart(2, "0")));
+      return { bars, token: fresh };
+    }
+    const h = await post(creds, token, "/station/history", { stationId: id, granularity: 1, startAt: date });
+    const points = (h.stationDataItems || []).map((it) => {
+      const ts = isoFromAny(it.timeStamp);
+      const pv = num(it.generationPower), load = num(it.consumptionPower);
+      const grid = num(it.gridPower) ?? num(it.wirePower);
+      const bat = num(it.dischargePower) !== null || num(it.chargePower) !== null ? (num(it.dischargePower) || 0) - (num(it.chargePower) || 0) : num(it.batteryPower);
+      return { ts, pv, load, grid, bat, soc: num(it.batterySOC), today_kwh: null };
+    }).filter((x) => x.ts && (x.pv !== null || x.load !== null)).sort((a, b) => (a.ts < b.ts ? -1 : 1));
+    return { points, token: fresh };
+  },
+
   // Ghi 1 cài đặt. cur = danh sách cài đặt đang hiển thị (để lấy giá trị cũ khi ghi lịch TOU)
   async writeSetting(creds, cached, stationId, key, value) {
     const { token } = await getToken(creds, cached);
