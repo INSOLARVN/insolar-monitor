@@ -9,6 +9,10 @@ Hệ thống giám sát và cài đặt điện mặt trời đa hãng, chạy h
 | **Gateway INSOLAR (ESP32)** gắn tại nhà khách | Toàn bộ thanh ghi inverter (PV từng MPPT, áp/dòng từng pha, tần số, nhiệt độ, trạng thái, lỗi…), khung CAN pin↔inverter, BMS từng cell | Có — giống app của hãng (chế độ làm việc, dòng sạc/xả, SOC, lịch 6 mốc, bán điện dư, máy phát…) |
 | **Cloud hãng** (Solarman, Deye Cloud, SolisCloud, SolaX) | Tổng quan + danh sách thông số hãng cung cấp | **Deye Cloud**: chế độ làm việc, ưu tiên năng lượng, bán điện dư, dòng sạc/xả, SOC thấp, lịch 6 mốc (cần bật quyền điều khiển thiết bị cho App trên developer.deyecloud.com). **SolisCloud**: chế độ lưu trữ, sạc từ lưới, dự phòng, dòng sạc/xả, SOC, 6 khung sạc + 6 khung xả (cần email Solis xin mở API điều khiển). Solarman/SolaX: không |
 
+## Deploy
+
+Kho `INSOLARVN/insolar-monitor` đã nối Cloudflare Workers Builds: mỗi lần đẩy lên nhánh `main` là Cloudflare tự deploy Worker `insolar-monitor`.
+
 ## Cài lên Cloudflare (1 lần)
 
 ```bash
