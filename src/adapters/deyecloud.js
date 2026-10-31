@@ -190,6 +190,7 @@ export default {
         load_power_w: lt.consumptionPower,
         grid_power_w: lt.gridPower ?? lt.wirePower,
         battery_soc: lt.batterySOC ?? s.batterySOC,
+        battery_power_w: num(lt.dischargePower) !== null || num(lt.chargePower) !== null ? (num(lt.dischargePower) || 0) - (num(lt.chargePower) || 0) : null,
         today_kwh: day.generationValue,
         total_kwh: lt.generationTotal,
         data_time: t,

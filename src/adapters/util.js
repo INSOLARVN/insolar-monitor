@@ -69,6 +69,7 @@ export function station(o) {
     load_power_w: num(o.load_power_w),
     grid_power_w: num(o.grid_power_w),
     battery_soc: num(o.battery_soc),
+    battery_power_w: num(o.battery_power_w), // MỚI (31/10/2026): công suất pin (+ = xả, − = sạc) để lịch sử có đường Pin
     today_kwh: num(o.today_kwh),
     total_kwh: num(o.total_kwh),
     data_time: o.data_time || null,
