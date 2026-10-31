@@ -47,17 +47,26 @@ async function call(creds, token, method, path, body) {
 }
 const post = (creds, token, path, body) => call(creds, token, "POST", path, body);
 
-async function inverterSns(creds, token, stationId) {
+// SỬA (31/10/2026): trước đây nuốt hết lỗi và chỉ nhận đúng loại "INVERTER" → báo "không tìm thấy inverter".
+// Nay: ưu tiên INVERTER, sau đó các loại biến tần/lưu trữ khác (trừ bộ thu thập, đồng hồ…), và ghi lại lỗi/loại thiết bị để báo rõ.
+const INV_PREF = [/^INVERTER$/i, /INVERTER|STORAGE|PCS|HYBRID/i];
+const NOT_INV = /COLLECTOR|DTU|METER|BATTERY|RELAY|WEATHER|OPTIMIZER|PV_MODULE/i;
+async function inverterSns(creds, token, stationId, diag = []) {
   for (const [path, body] of [
-    ["/station/device", { stationIds: [Number(stationId)], page: 1, size: 20 }],
-    ["/station/listWithDevice", { page: 1, size: 100, deviceType: "INVERTER" }],
+    ["/station/device", { stationIds: [Number(stationId)], page: 1, size: 100 }],
+    ["/station/listWithDevice", { page: 1, size: 100 }],
   ]) {
     try {
       const r = await post(creds, token, path, body);
       const list = r.deviceListItems || (r.stationList || []).filter((s) => String(s.id) === String(stationId)).flatMap((s) => s.deviceListItems || []);
-      const sns = list.filter((x) => !x.deviceType || /INVERTER/i.test(x.deviceType)).map((x) => x.deviceSn);
-      if (sns.length) return sns;
-    } catch {}
+      diag.push(`${path}: ${list.length} thiết bị [${[...new Set(list.map((x) => x.deviceType))].join(",") || "-"}]`);
+      for (const re of INV_PREF) {
+        const sns = list.filter((x) => x.deviceSn && re.test(String(x.deviceType || "INVERTER"))).map((x) => x.deviceSn);
+        if (sns.length) return sns;
+      }
+      const other = list.filter((x) => x.deviceSn && !NOT_INV.test(String(x.deviceType || ""))).map((x) => x.deviceSn);
+      if (other.length) return other;
+    } catch (e) { diag.push(`${path}: ${e.message}`); }
   }
   return [];
 }
@@ -177,8 +186,9 @@ export default {
 
   async fetchDetail(creds, cached, stationId) {
     const { token, fresh } = await getToken(creds, cached);
-    const sns = await inverterSns(creds, token, stationId);
-    if (!sns.length) throw new Error("Không tìm thấy inverter của trạm trên Deye Cloud");
+    const diag = [];
+    const sns = await inverterSns(creds, token, stationId, diag);
+    if (!sns.length) throw new Error(`Không tìm thấy inverter của trạm trên Deye Cloud (${diag.join(" | ")})`);
     const r = await post(creds, token, "/device/latest", { deviceList: sns.slice(0, 1) });
     const dd = (r.deviceDataList || [])[0] || {};
     const human = (k) => String(k).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/(\D)(\d)/g, "$1$2");
