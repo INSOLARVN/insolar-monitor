@@ -1325,7 +1325,7 @@ async function viewBattery() {
   const draw = () => {
     const el = $("#sv"); if (!el) return;
     const d = S.detail;
-    if (!d) { el.innerHTML = `<div class="empty">Chưa có dữ liệu.</div>`; return; }
+    if (!d) { el.innerHTML = `<div class="empty">Chưa có dữ liệu.${S.detailErr ? "<br><small>" + esc(S.detailErr) + "</small>" : ""}</div>`; return; } // SỬA (31/10/2026): hiện lỗi thật từ cloud
     const b = d.battery, can = d.can, bms = d.bms;
     let html = `<div class="card"><h3>${ico("battery", 'style="width:20px;height:20px;color:var(--bat)"')} Tổng quan pin</h3>
       <div class="gauges" style="grid-template-columns:repeat(3,minmax(0,1fr))">
@@ -1391,7 +1391,7 @@ async function viewInverter() {
   const draw = () => {
     const el = $("#sv"); if (!el) return;
     const d = S.detail;
-    if (!d) { el.innerHTML = `<div class="empty">Chưa có dữ liệu.</div>`; return; }
+    if (!d) { el.innerHTML = `<div class="empty">Chưa có dữ liệu.${S.detailErr ? "<br><small>" + esc(S.detailErr) + "</small>" : ""}</div>`; return; } // SỬA (31/10/2026): hiện lỗi thật từ cloud
     const dv = d.device;
     const ph = (title, arr, extra = "") => arr?.length ? `<div class="card mt"><h3>${title}</h3><div class="scrollx"><table class="tbl"><tr><th>Pha</th><th>Điện áp</th><th>Dòng</th><th>Công suất</th></tr>
       ${arr.map((p) => `<tr><td><b>L${p.l}</b></td><td class="cv">${fV(p.v)}</td><td class="cv">${fA(p.a)}</td><td class="cw">${fW(p.w)}</td></tr>`).join("")}</table></div>${extra}</div>` : "";
@@ -1482,7 +1482,7 @@ async function viewSettings() {
   const draw = () => {
     const el = $("#sv"); if (!el) return;
     const d = S.detail;
-    if (!d) { el.innerHTML = `<div class="empty">Chưa có dữ liệu.</div>`; return; }
+    if (!d) { el.innerHTML = `<div class="empty">Chưa có dữ liệu.${S.detailErr ? "<br><small>" + esc(S.detailErr) + "</small>" : ""}</div>`; return; } // SỬA (31/10/2026): hiện lỗi thật từ cloud
     const sets = d.settings || [];
     const enabled = !!d.settings_enabled && S.online !== false;
     if (!sets.length) {
