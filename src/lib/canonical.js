@@ -221,6 +221,8 @@ const CLOUD_MAP = [
   [/^ac temperature|^inverter temperature|^igbt temperature/i, (d, v) => (d.device.temp_ac = v)],
   [/^rated power$/i, (d, v) => (d.device.rated_power = v)],
   [/^inverter status$|^running status$|^state$/i, (d, v) => (d.device.state = v)],
+  [/^inverter alarm$/i, (d, v) => (d.device.alarm = v)],
+  [/^inverter fault$/i, (d, v) => (d.device.fault = v)],
   // MỚI (31/10/2026): tên thông số thật của Deye Cloud (đối chiếu dữ liệu trạm thật) — trước đây không khớp nên hiện "--"
   [/^pv daily power generation|^daily active production$/i, (d, v) => (d.pv.today_kwh = v)],
   [/^pv cumulative power generation|^total active production$/i, (d, v) => (d.pv.total_kwh = v)],
@@ -259,6 +261,14 @@ export function fromCloudList(list, source, extra = {}) {
       if (mm) { try { fn(d, val, mm, name); } catch {} break; }
     }
     d.params.push({ key: it.key || name, name, group: it.group || "Thông số", value: val, uom: it.unit || null });
+  }
+  // MỚI (31/10/2026): cloud hãng không trả dòng/công suất từng pha của tải → ước tính từ công suất tải và điện áp (gần đúng, cos φ ≈ 1)
+  if (n(d.load.power) !== null && d.load.phases.length) {
+    const np = d.load.phases.length;
+    for (const p of d.load.phases) {
+      if (p.w === null || p.w === undefined) p.w = Math.round(d.load.power / np);
+      if ((p.a === null || p.a === undefined) && n(p.v)) p.a = Math.round((d.load.power / np / p.v) * 10) / 10;
+    }
   }
   d.pv.strings.sort((a, b) => a.n - b.n);
   for (const s of d.pv.strings) if (s.w === null && s.v !== null && s.a !== null) s.w = Math.round(s.v * s.a);

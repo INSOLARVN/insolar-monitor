@@ -205,7 +205,7 @@ async function cloudHistory(env, st, range, d, ctx) {
     const r = await ad.fetchHistory(creds, cached, st.ext_id, range, d);
     if (r.token) ctx?.waitUntil?.(env.DB.prepare("UPDATE accounts SET token_enc=?2 WHERE id=?1").bind(acc.id, await encrypt(env.ENC_KEY, r.token)).run());
     return r;
-  } catch { return null; }
+  } catch (e) { return { error: String(e.message || e) }; }
 }
 
 async function history(env, st, range, date, ctx) {
@@ -213,6 +213,7 @@ async function history(env, st, range, date, ctx) {
   const cloud = await cloudHistory(env, st, range, d, ctx);
   if (cloud?.bars?.length) return { range, date: d, bars: cloud.bars };
   if (cloud?.points?.length && range !== "month" && range !== "year") return { range: "day", date: d, points: cloud.points };
+  const note = cloud?.error ? `Không lấy được lịch sử từ cloud: ${cloud.error}` : null;
   if (range === "month" || range === "year") {
     const from = range === "month" ? d.slice(0, 7) + "-01" : d.slice(0, 4) + "-01-01";
     const toDate = new Date(from + "T00:00:00+07:00");
@@ -222,14 +223,14 @@ async function history(env, st, range, date, ctx) {
         MAX(export_kwh) AS exp, MAX(charge_kwh) AS chg, MAX(discharge_kwh) AS dis
        FROM readings WHERE station_id=?1 AND ts >= ?2 AND ts < ?3 GROUP BY day ORDER BY day`
     ).bind(st.id, new Date(from + "T00:00:00+07:00").toISOString(), toDate.toISOString()).all();
-    if (range === "month") return { range, date: d, bars: results.map((r) => ({ label: r.day.slice(8), ...r })) };
+    if (range === "month") return { range, date: d, note, bars: results.map((r) => ({ label: r.day.slice(8), ...r })) };
     const by = {};
     for (const r of results) {
       const k = r.day.slice(5, 7);
       by[k] ??= { label: k, pv: 0, load: 0, imp: 0, exp: 0, chg: 0, dis: 0 };
       for (const f of ["pv", "load", "imp", "exp", "chg", "dis"]) by[k][f] += r[f] || 0;
     }
-    return { range, date: d, bars: Object.values(by) };
+    return { range, date: d, note, bars: Object.values(by) };
   }
   const from = new Date(d + "T00:00:00+07:00").toISOString();
   const to = new Date(d + "T23:59:59+07:00").toISOString();
@@ -239,7 +240,7 @@ async function history(env, st, range, date, ctx) {
   ).bind(st.id, from, to).all();
   let points = results;
   if (!points.length && st.brand === "demo") points = demoDay(st, d);
-  return { range: "day", date: d, points };
+  return { range: "day", date: d, note, points };
 }
 
 function demoDay(st, d) {

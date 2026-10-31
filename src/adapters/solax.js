@@ -30,6 +30,12 @@ async function get(creds, token, path, params) {
 // Công suất: W khi dân dụng (businessType 1), kW khi thương mại (4) → đổi về W
 const toW = (c, v) => { const n = num(v); return n === null ? null : bt(c) === 4 ? n * 1000 : n; };
 
+async function postJson(creds, token, path, body) {
+  const res = await fetchJson(`${base(creds)}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `bearer ${token}` }, body: JSON.stringify({ ...body, businessType: String(bt(creds)) }) });
+  if (res.code !== 10000) throw new Error(`SolaX ${path}: ${res.message || "mã " + res.code}`);
+  return res.result;
+}
+
 async function allPages(creds, token, path, params) {
   const out = [];
   for (let pageNo = 1; pageNo <= 20; pageNo++) {
@@ -74,6 +80,11 @@ function toList(creds, inv, bat, ex = {}) {
   add("Cumulative Grid Feed In", num(inv.totalExportEnergy), "kWh");
   add("Inverter Temperature", num(inv.inverterTemperature), "℃");
   add("Total Power Factor", num(inv.totalPowerFactor), "");
+  // Áp tải: SolaX không có áp/dòng tải riêng → dùng điện áp cổng EPS nếu có, không thì điện áp AC của inverter
+  for (let i = 1; i <= 3; i++) {
+    const ev = num(inv[`EPSL${i}Voltage`]);
+    add(`Load Voltage L${i}`, ev ? ev : num(inv[`acVoltage${i}`]), "V");
+  }
   for (let i = 1; i <= 3; i++) add(`EPS Power L${i}`, toW(creds, inv[`EPSL${i}ActivePower`]), "W");
   // Công suất AC từng pha + công suất tổng của inverter
   for (let i = 1; i <= 3; i++) add(`AC Power L${i}`, toW(creds, inv[`acPower${i}`]), "W");
@@ -164,6 +175,36 @@ export default {
     return { stations: out, token: fresh };
   },
 
+  // MỚI (31/10/2026): lịch sử từ SolaX Cloud — ngày: history_data (inverter + pin, mỗi 10 phút); tháng/năm: get_stat_data
+  async fetchHistory(creds, cached, plantId, range, date) {
+    const { token, fresh } = await getToken(creds, cached);
+    if (range === "month" || range === "year") {
+      const r = await postJson(creds, token, "/openapi/v2/plant/energy/get_stat_data", { plantId, dateType: range === "year" ? "1" : "2", date: range === "year" ? date.slice(0, 4) : date.slice(0, 7) });
+      const bars = (r.plantEnergyStatDataList || []).map((x) => ({ label: range === "year" ? String(x.date).slice(5, 7) : String(x.date).slice(8, 10), day: x.date, pv: num(x.pvGeneration), load: num(x.loadConsumption), imp: num(x.importEnergy), exp: num(x.exportEnergy), chg: num(x.batteryCharged) === null ? null : Math.abs(x.batteryCharged), dis: num(x.batteryDischarged) === null ? null : Math.abs(x.batteryDischarged) }));
+      return { bars, token: fresh };
+    }
+    const sn = (await inverterOf(creds, token, plantId))[0]?.deviceSn;
+    if (!sn) throw new Error("Không tìm thấy inverter của trạm");
+    const t0 = new Date(date + "T00:00:00+07:00").getTime();
+    const win = [[t0, t0 + 12 * 3600e3 - 1], [t0 + 12 * 3600e3, t0 + 24 * 3600e3 - 1]];
+    const q = (deviceType, [a, b]) => get(creds, token, "/openapi/v2/device/history_data", { snList: sn, deviceType, ...(deviceType === "2" ? { requestSnType: "1" } : {}), startTime: String(a), endTime: String(b), timeInterval: "10" }).catch(() => []);
+    const [i1, i2, b1, b2] = await Promise.all([q("1", win[0]), q("1", win[1]), q("2", win[0]), q("2", win[1])]);
+    const key = (x) => String(x.plantLocalTime || x.dataTime || "").slice(0, 16);
+    const bm = new Map([...(b1 || []), ...(b2 || [])].map((x) => [key(x), x]));
+    const points = [...(i1 || []), ...(i2 || [])].map((x) => {
+      const ts = isoFromAny(x.dataTime ? x.dataTime : x.plantLocalTime);
+      const b = bm.get(key(x));
+      const pvm = x.pvMap || {}, mp = x.mpptMap || {};
+      let pv = toW(creds, x.MPPTTotalInputPower);
+      if (pv === null) { const ps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => toW(creds, pvm[`pv${i}Power`] ?? mp[`mppt${i}Power`])).filter((v) => v !== null); pv = ps.length ? ps.reduce((a, c) => a + c, 0) : null; }
+      const gexp = toW(creds, x.gridPower);
+      const cp = b ? num(b.chargeDischargePower) : null;
+      const load = pv === null ? null : Math.max(0, pv - (cp || 0) - (gexp || 0));
+      return { ts, pv, load, grid: gexp === null ? null : -gexp, bat: cp === null ? null : -cp, soc: b ? num(b.batterySOC) : null, today_kwh: num(x.dailyYield) };
+    }).filter((p) => p.ts).sort((a, b) => (a.ts < b.ts ? -1 : 1));
+    return { points, token: fresh };
+  },
+
   async fetchDetail(creds, cached, plantId) {
     const { token, fresh } = await getToken(creds, cached);
     const devs = await inverterOf(creds, token, plantId);
@@ -191,7 +232,12 @@ export default {
       loadW, dailyLoad, totalLoad, batAh,
       dailyCharged: f("dailyCharged"), dailyDischarged: f("dailyDischarged"), totalCharged: f("totalCharged"), totalDischarged: f("totalDischarged"),
     };
+    // Cảnh báo / lỗi đang diễn ra của thiết bị
+    let alarms = [];
+    try { alarms = (await allPages(creds, token, "/openapi/v2/alarm/page_alarm_info", { plantId, deviceSn: sn, alarmState: "1" })) || []; } catch {}
     const list = toList(creds, inv, bat, ex);
+    list.push({ name: "Inverter Alarm", value: alarms.length ? alarms.slice(0, 3).map((a) => a.alarmName).join("; ") : "Không", unit: "" });
+    list.push({ name: "Inverter Fault", value: alarms.length ? alarms.slice(0, 3).map((a) => "E" + a.errorCode).join(", ") : "Không", unit: "" });
     const model = MODEL[Number(dev.deviceModel)];
     const device = { type: model ? `SolaX ${model}` : undefined, firmware: [dev.armVersion, dev.dspVersion].filter(Boolean).join(" / ") || undefined };
     return { list, serial: sn, time: inv.plantLocalTime, token: fresh, device };

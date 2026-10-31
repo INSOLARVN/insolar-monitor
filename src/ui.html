@@ -1320,7 +1320,7 @@ async function viewHistory() {
       scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 7 } }, y: { grid }, y2: { position: "right", min: 0, max: 100, grid: { display: false } } } } }));
     const pk = Math.max(0, ...r.points.map((p) => p.pv || 0));
     const last = r.points[r.points.length - 1] || {};
-    $("#hs").innerHTML = `<div class="stat3"><div><span>Đỉnh PV</span><b>${fW(pk)}</b></div><div><span>Sản lượng</span><b>${fK(last.today_kwh ?? (r.date === vnDate() ? S.detail?.pv.today_kwh : null))}</b></div><div><span>Số điểm</span><b>${r.points.length}</b></div></div>`;
+    $("#hs").innerHTML = `<div class="stat3"><div><span>Đỉnh PV</span><b>${fW(pk)}</b></div><div><span>Sản lượng</span><b>${fK(last.today_kwh ?? (r.date === vnDate() ? S.detail?.pv.today_kwh : null))}</b></div><div><span>Số điểm</span><b>${r.points.length}</b></div></div>${r.note && !r.points.length ? `<p class="muted small" style="margin:10px 0 0">${esc(r.note)}</p>` : ""}`;
   } else {
     const B = r.bars;
     const bar = (label, key, color) => ({ label, data: B.map((b) => (isNum(b[key]) ? +b[key].toFixed(1) : null)), backgroundColor: color, borderRadius: 4, maxBarThickness: 18 });
@@ -1329,7 +1329,7 @@ async function viewHistory() {
     ] }, options: { maintainAspectRatio: false, plugins: { legend: { labels: { boxWidth: 10, boxHeight: 10 } } }, scales: { x: { grid: { display: false } }, y: { grid, title: { display: true, text: "kWh" } } } } }));
     const tot = (k) => B.reduce((a, b) => a + (b[k] || 0), 0);
     $("#hs").innerHTML = `<div class="stat3"><div><span>Sản xuất</span><b class="ce">${nf(tot("pv"), 1)} kWh</b></div><div><span>Tiêu thụ</span><b>${nf(tot("load"), 1)} kWh</b></div><div><span>Mua lưới</span><b class="cv">${nf(tot("imp"), 1)} kWh</b></div></div>
-      ${B.length ? "" : `<p class="muted small" style="margin:10px 0 0">Chưa có dữ liệu cho khoảng này.</p>`}`;
+      ${B.length ? "" : `<p class="muted small" style="margin:10px 0 0">${esc(r.note || "Chưa có dữ liệu cho khoảng này.")}</p>`}`;
   }
 }
 
