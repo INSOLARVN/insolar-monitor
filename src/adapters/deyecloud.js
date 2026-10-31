@@ -52,13 +52,16 @@ const post = (creds, token, path, body) => call(creds, token, "POST", path, body
 const INV_PREF = [/^INVERTER$/i, /INVERTER|STORAGE|PCS|HYBRID/i];
 const NOT_INV = /COLLECTOR|DTU|METER|BATTERY|RELAY|WEATHER|OPTIMIZER|PV_MODULE/i;
 async function inverterSns(creds, token, stationId, diag = []) {
-  for (const [path, body] of [
-    ["/station/device", { stationIds: [Number(stationId)], page: 1, size: 100 }],
-    ["/station/listWithDevice", { page: 1, size: 100 }],
-  ]) {
+  // SỬA (31/10/2026): station/device size 100 → HTTP 500 (giữ 20 như cũ); listWithDevice tối đa 50/trang → duyệt nhiều trang
+  const tries = [["/station/device", { stationIds: [Number(stationId)], page: 1, size: 20 }]];
+  for (let pg = 1; pg <= 10; pg++) tries.push(["/station/listWithDevice", { page: pg, size: 50 }]);
+  let lwdOk = false;
+  for (const [path, body] of tries) {
+    if (path === "/station/listWithDevice" && lwdOk) break;
     try {
       const r = await post(creds, token, path, body);
       const list = r.deviceListItems || (r.stationList || []).filter((s) => String(s.id) === String(stationId)).flatMap((s) => s.deviceListItems || []);
+      if (path === "/station/listWithDevice") { const total = Number(r.total) || 0; if (!total || body.page * body.size >= total) lwdOk = true; if (!list.length && !lwdOk) continue; }
       diag.push(`${path}: ${list.length} thiết bị [${[...new Set(list.map((x) => x.deviceType))].join(",") || "-"}]`);
       for (const re of INV_PREF) {
         const sns = list.filter((x) => x.deviceSn && re.test(String(x.deviceType || "INVERTER"))).map((x) => x.deviceSn);
@@ -66,7 +69,7 @@ async function inverterSns(creds, token, stationId, diag = []) {
       }
       const other = list.filter((x) => x.deviceSn && !NOT_INV.test(String(x.deviceType || ""))).map((x) => x.deviceSn);
       if (other.length) return other;
-    } catch (e) { diag.push(`${path}: ${e.message}`); }
+    } catch (e) { diag.push(`${path}: ${e.message}`); if (path === "/station/listWithDevice") break; }
   }
   return [];
 }
