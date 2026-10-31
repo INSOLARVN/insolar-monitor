@@ -226,7 +226,8 @@ export async function publicAuthRoutes(req, env, url) {
     if (await limited(env, "login:" + IP, 15 * 60e3, 15)) return json({ error: "Thử sai quá nhiều lần. Đợi 15 phút rồi thử lại." }, 429);
     const raw = String(b.id ?? "").trim(), pw = String(b.password || "");
     const id = normId(raw);
-    let u = id ? await findUser(env, id) : null;
+    // SỬA (31/10/2026): ô tài khoản để trống hoặc "admin" = chủ hệ thống đầu tiên (khi chủ chưa có email/SĐT)
+    let u = id ? await findUser(env, id) : !raw || raw.toLowerCase() === "admin" ? await env.DB.prepare("SELECT * FROM users WHERE role='owner' AND disabled=0 ORDER BY id LIMIT 1").first() : null;
     if (u && !u.disabled && (await checkPw(pw, u.pw))) return loggedIn(env, u);
     // Mật khẩu khẩn cấp của chủ (bí mật ADMIN_PASSWORD trên Cloudflare)
     if (env.ADMIN_PASSWORD && safeEqual(pw, env.ADMIN_PASSWORD) && (!raw || raw.toLowerCase() === "admin" || (u && u.role === "owner") || (!u && id))) {
