@@ -240,10 +240,10 @@ function demoDay(st, d) {
 }
 
 // ---------- API ----------
-// SỬA (31/10/2026): thêm s.account_id — thiếu cột này làm mở chi tiết trạm cloud báo D1_TYPE_ERROR (bind undefined)
+// SỬA (31/10/2026): thêm s.account_id, s.ext_id (mã trạm bên hãng, thiếu → gọi cloud bằng 'undefined') — thiếu cột này làm mở chi tiết trạm cloud báo D1_TYPE_ERROR (bind undefined)
 const STATION_COLS = `s.id, s.brand, s.name, s.customer, s.phone, s.note, s.address, s.capacity_kwp, s.battery_kwh, s.status, s.pv_power_w,
   s.load_power_w, s.grid_power_w, s.battery_power_w, s.battery_soc, s.today_kwh, s.total_kwh, s.data_time, s.synced_at, s.share_token,
-  s.gateway_id, s.account_id, s.lat, s.lon, COALESCE(a.label, 'Gateway INSOLAR') AS account_label`;
+  s.gateway_id, s.account_id, s.ext_id, s.lat, s.lon, COALESCE(a.label, 'Gateway INSOLAR') AS account_label`;
 
 const GW_FIELDS = ["name", "profile", "params", "slave", "transport", "v5_host", "v5_serial", "poll", "can_enabled", "bms_kind", "bms_transport",
   "bms_ble_names", "allow_write", "invert_battery", "invert_grid"];
@@ -287,7 +287,7 @@ async function api(req, env, url, ctx) {
     if (m[2]) return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date")));
     const det = await stationDetail(env, st, ctx);
     if (det.detail) { det.detail.settings = []; det.detail.params = []; }
-    const { customer, phone, note, share_token, gateway_id, account_id, account_label, lat, lon, ...pub } = st;
+    const { customer, phone, note, share_token, gateway_id, account_id, ext_id, account_label, lat, lon, ...pub } = st;
     return json({ station: pub, ...det, weather: await weatherFor(env, st) });
   }
 
