@@ -194,7 +194,8 @@ export default {
       g(`api/v1/inverter/${sn}`), g(`api/v1/inverter/${sn}/output/day`, { lan: "en", date: new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), column: "dc_temp,igbt_temp" }),
       g(`api/v1/common/setting/${sn}/read`),
     ]);
-    const lastOf = (re) => { const s = (temps.infos || []).find((x) => re.test(String(x.label || ""))); const r = s?.records || []; return r.length ? num(r[r.length - 1].value) : null; };
+    // SỬA (01/11/2026): chuỗi nhiệt độ cả ngày có các mốc tương lai rỗng → lấy mốc gần nhất CÓ số (trước lấy mốc cuối nên ra rỗng)
+    const lastOf = (re) => { const sr = (temps.infos || []).find((x) => re.test(String(x.label || ""))); const r = sr?.records || []; for (let i = r.length - 1; i >= 0; i--) { const v = num(r[i]?.value); if (v !== null && v !== 0) return v; } return null; };
     const nz = (...vs) => { for (const v of vs) { const x = num(v); if (x !== null && x !== 0) return x; } return null; }; // 0 = hãng không đo
     const L = [];
     const add = (name, value, unit) => { if (num(value) !== null || (typeof value === "string" && value)) L.push({ name, value, unit }); };
@@ -219,11 +220,9 @@ export default {
     // Pin (Sunsynk/Deye: power + = xả)
     add("Battery Power", f.bat ?? bat.power, "W");
     add("Battery Voltage", bat.voltage, "V"); add("Battery Current", bat.current, "A");
-    add("SOC", f.soc ?? bat.soc, "%"); // SỬA (01/11/2026): BMS không giao tiếp (bmsSoc/bmsVolt = 0) thì PV Pro trả nhiệt độ ảo (vd. -31,5°C) → không hiển thị
-    const bmsLink = nz(bat.bmsSoc, bat.bmsVolt, bat.batterySoc1, bat.batteryVolt1) !== null;
-    const bt = nz(bat.bmsTemp, bat.batteryTemp1, bmsLink ? bat.temp : null);
-    add("Battery Temperature", bt !== null && bt > -20 && bt < 90 ? bt : null, "℃");
-    if (!bmsLink) add("Battery BMS Link", "BMS chưa giao tiếp với biến tần (không có nhiệt độ, SOH, giới hạn sạc/xả)", "");
+    add("SOC", f.soc ?? bat.soc, "%"); // SỬA (01/11/2026): các trường bms* của PV Pro luôn = 0 kể cả khi pin có giao tiếp → không dùng để đoán; lấy temp nếu hợp lý
+    const bt = nz(bat.temp, bat.bmsTemp, bat.batteryTemp1);
+    add("Battery Temperature", bt !== null && bt > -20 && bt < 90 ? bt : null, "℃"); // -31,5 = cảm biến không có/không đọc được
     add("SOH", nz(bat.soh, bat.bmsSoh), "%");
     add("Battery Rated Capacity", nz(bat.capacity, bat.correctCap, cfg.batteryCap), "Ah");
     add("Daily Charging Energy", bat.etodayChg, "kWh"); add("Daily Discharging Energy", bat.etodayDischg, "kWh");
@@ -235,7 +234,7 @@ export default {
     // MỚI (01/11/2026): toàn bộ số liệu gốc của PV Pro vào bảng thông số (tên có tiền tố để không lẫn với thông số chuẩn)
     const raw = (tag, o) => { for (const [k, v] of Object.entries(o || {})) if (v !== null && v !== undefined && v !== "" && typeof v !== "object") L.push({ name: `${tag}.${k}`, key: `${tag}.${k}`, value: v, unit: null, group: "PV Pro – " + tag }); };
     // Chẩn đoán: nhãn chuỗi nhiệt độ PV Pro trả về + lỗi endpoint
-    L.push({ name: "diag.temps", key: "diag.temps", value: (temps.infos || []).map((x) => `${x.label}:${(x.records || []).length}`).join(", ") || "rỗng", unit: null, group: "PV Pro – chẩn đoán" });
+    L.push({ name: "diag.temps", key: "diag.temps", value: (temps.infos || []).map((x) => `${x.label}:${(x.records || []).length}:${JSON.stringify((x.records || []).slice(-2))}`).join(" | ").slice(0, 400) || "rỗng", unit: null, group: "PV Pro – chẩn đoán" });
     for (const [k, v] of Object.entries(errs)) L.push({ name: `diag.${k}`, key: `diag.${k}`, value: v, unit: null, group: "PV Pro – chẩn đoán" });
     raw("battery", bat); raw("grid", grid); raw("load", load); raw("output", output); raw("input", input); raw("flow", flow); raw("inverter", info);
     const ver = [info.masterVer, info.softVer, info.hmiVer].filter(Boolean).join(" / ");
