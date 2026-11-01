@@ -104,6 +104,45 @@ function fromFlow(f) {
   return { pv: num(f.pvPower), load: num(f.loadOrEpsPower) ?? num(f.homeLoadPower), bat, grid, soc: num(f.soc) };
 }
 
+// ---------- Cài đặt từ xa (MỚI 01/11/2026): api/v1/common/setting/{sn}/read|set — giống Sunsynk Connect (biến tần lõi Deye) ----------
+const WORK = { 0: "Export First", 1: "Zero Export To Load", 2: "Zero Export To CT" };
+const PATTERN = { 0: "Battery First", 1: "Load First" };
+const CHG_OPTS = ["Disabled", "Grid", "Generator", "Both"];
+const isOn = (v) => v === true || /^(1|true|on)$/i.test(String(v));
+const hhmm = (v) => { const s = String(v ?? "").trim(); if (s.includes(":")) { const [h, m] = s.split(":"); return `${String(+h).padStart(2, "0")}:${String(+m || 0).padStart(2, "0")}`; } const d = s.padStart(4, "0"); return `${d.slice(0, 2)}:${d.slice(2, 4)}`; };
+// Bảng: khoá app → [khoá PV Pro, kiểu, min, max, bước, tên hiển thị, nhóm, đơn vị]
+const NUMS = {
+  max_sell_power: ["solarMaxSellPower", 0, 30000, 100, "Export Surplus Power", "Work Mode", "W"],
+  zero_export: ["zeroExportPower", 0, 1000, 10, "Zero Export power", "Work Mode", "W"],
+  max_charge: ["batteryMaxCurrentCharge", 0, 240, 1, "Battery Max Charging Current", "Settings", "A"],
+  max_discharge: ["batteryMaxCurrentDischarge", 0, 240, 1, "Battery Max Discharging Current", "Settings", "A"],
+  batt_low: ["batteryLowCap", 0, 100, 1, "Battery Low SOC", "Settings", "%"],
+  batt_shutdown: ["batteryShutdownCap", 0, 100, 1, "Battery Shutdown SOC", "Settings", "%"],
+  batt_restart: ["batteryRestartCap", 0, 100, 1, "Battery Restart SOC", "Settings", "%"],
+};
+function settingsFrom(c) {
+  const out = [];
+  const add = (o) => out.push({ group: "Settings", uom: null, ...o });
+  if (c.sysWorkMode !== undefined) add({ key: "work_mode", name: "Work Mode", group: "Work Mode", platform: "select", options: Object.values(WORK), value: WORK[c.sysWorkMode] ?? String(c.sysWorkMode) });
+  if (c.energyMode !== undefined) add({ key: "energy_pattern", name: "Energy Pattern", group: "Work Mode", platform: "select", options: Object.values(PATTERN), value: PATTERN[c.energyMode] ?? String(c.energyMode) });
+  if (c.solarSell !== undefined) add({ key: "solar_sell", name: "Export Surplus", group: "Work Mode", platform: "switch", on: 1, off: 0, bit: null, value: isOn(c.solarSell) ? 1 : 0 });
+  for (const [k, [f, min, max, step, name, group, uom]] of Object.entries(NUMS)) if (c[f] !== undefined) add({ key: k, name, group, platform: "number", uom, min, max, step, value: num(c[f]) });
+  if (c.peakAndVallery !== undefined) {
+    add({ key: "tou_switch", name: "Time of Use", group: "Work Mode", platform: "switch", on: 1, off: 0, bit: null, value: isOn(c.peakAndVallery) ? 1 : 0 });
+    for (let n = 1; n <= 6; n++) {
+      if (c[`sellTime${n}`] === undefined) continue;
+      const g = "Work Mode", gc = isOn(c[`time${n}on`]), gen = isOn(c[`genTime${n}on`]);
+      add({ key: `tou_${n}_time`, name: `Program ${n} Time`, group: g, platform: "time", value: hhmm(c[`sellTime${n}`]) });
+      add({ key: `tou_${n}_power`, name: `Program ${n} Power`, group: g, platform: "number", uom: "W", min: 0, max: 30000, step: 100, value: num(c[`sellTime${n}Pac`]) });
+      add({ key: `tou_${n}_soc`, name: `Program ${n} SOC`, group: g, platform: "number", uom: "%", min: 0, max: 100, step: 1, value: num(c[`cap${n}`]) });
+      add({ key: `tou_${n}_chg`, name: `Program ${n} Charging`, group: g, platform: "select", options: CHG_OPTS, value: gc && gen ? "Both" : gc ? "Grid" : gen ? "Generator" : "Disabled" });
+    }
+  }
+  return out;
+}
+// Giữ đúng kiểu dữ liệu gốc của PV Pro (chuỗi "80" / số / true-false)
+const like = (orig, v) => (typeof orig === "boolean" ? !!v : typeof orig === "number" ? Number(v) : typeof v === "boolean" ? (v ? "1" : "0") : String(v));
+
 export default {
   brand: "inteless",
   label: "PV Pro / Inteless (E-Linter: Chisage, Sosen, Sunsynk…)",
@@ -146,10 +185,15 @@ export default {
     if (!inv) throw new Error("Trạm chưa có biến tần trên PV Pro");
     const sn = inv.sn;
     const g = async (path, params) => { try { return (await get(host, token, path, params)) || {}; } catch { return {}; } };
-    const [flow, input, output, grid, load, bat] = await Promise.all([
+    const [flow, input, output, grid, load, bat, info, temps, cfg] = await Promise.all([
       g(`api/v1/inverter/${sn}/flow`), g(`api/v1/inverter/${sn}/realtime/input`), g(`api/v1/inverter/${sn}/realtime/output`),
       g(`api/v1/inverter/grid/${sn}/realtime`, { sn }), g(`api/v1/inverter/load/${sn}/realtime`, { sn }), g(`api/v1/inverter/battery/${sn}/realtime`, { sn, lan: "en" }),
+      // MỚI (01/11/2026): thông tin máy, nhiệt độ DC/IGBT, cài đặt
+      g(`api/v1/inverter/${sn}`), g(`api/v1/inverter/${sn}/output/day`, { lan: "en", date: new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10), column: "dc_temp,igbt_temp" }),
+      g(`api/v1/common/setting/${sn}/read`),
     ]);
+    const lastOf = (re) => { const s = (temps.infos || []).find((x) => re.test(String(x.label || ""))); const r = s?.records || []; return r.length ? num(r[r.length - 1].value) : null; };
+    const nz = (...vs) => { for (const v of vs) { const x = num(v); if (x !== null && x !== 0) return x; } return null; }; // 0 = hãng không đo
     const L = [];
     const add = (name, value, unit) => { if (num(value) !== null || (typeof value === "string" && value)) L.push({ name, value, unit }); };
     const f = fromFlow(flow);
@@ -173,12 +217,52 @@ export default {
     // Pin (Sunsynk/Deye: power + = xả)
     add("Battery Power", f.bat ?? bat.power, "W");
     add("Battery Voltage", bat.voltage, "V"); add("Battery Current", bat.current, "A");
-    add("SOC", f.soc ?? bat.soc, "%"); add("Battery Temperature", bat.temp, "℃");
+    add("SOC", f.soc ?? bat.soc, "%"); add("Battery Temperature", nz(bat.temp, bat.bmsTemp), "℃");
+    add("SOH", nz(bat.soh, bat.bmsSoh), "%");
+    add("Battery Rated Capacity", nz(bat.capacity, bat.correctCap, cfg.batteryCap), "Ah");
     add("Daily Charging Energy", bat.etodayChg, "kWh"); add("Daily Discharging Energy", bat.etodayDischg, "kWh");
     add("Total Charge Energy", bat.etotalChg, "kWh"); add("Total Discharge Energy", bat.etotalDischg, "kWh");
-    add("BMS Charge Current Limit", bat.chargeCurrentLimit, "A"); add("BMS Discharge Current Limit", bat.dischargeCurrentLimit, "A");
+    add("BMS Charge Current Limit", nz(bat.chargeCurrentLimit, bat.maxChargeCurrentLimit), "A"); add("BMS Discharge Current Limit", nz(bat.dischargeCurrentLimit, bat.maxDischargeCurrentLimit), "A");
     add("Generator Power", flow.genPower, "W");
-    return { list: L, serial: sn, device: { model: inv.model || inv.equipMode || null, firmware: inv.masterVer || null }, token: fresh };
+    add("DC Temperature", nz(lastOf(/dc/i)), "℃"); add("AC Temperature", nz(lastOf(/igbt|ac/i)), "℃");
+    add("Rated Power", nz(info.ratePower, inv.ratePower), "W");
+    // MỚI (01/11/2026): toàn bộ số liệu gốc của PV Pro vào bảng thông số (tên có tiền tố để không lẫn với thông số chuẩn)
+    const raw = (tag, o) => { for (const [k, v] of Object.entries(o || {})) if (v !== null && v !== undefined && v !== "" && typeof v !== "object") L.push({ name: `${tag}.${k}`, key: `${tag}.${k}`, value: v, unit: null, group: "PV Pro – " + tag }); };
+    raw("battery", bat); raw("grid", grid); raw("load", load); raw("output", output); raw("input", input); raw("flow", flow); raw("inverter", info);
+    const ver = [info.masterVer, info.softVer, info.hmiVer].filter(Boolean).join(" / ");
+    const settings = Object.keys(cfg).length ? settingsFrom(cfg) : null;
+    return {
+      list: L, serial: sn, token: fresh, settings,
+      settingsError: settings ? null : "PV Pro không cho đọc cài đặt của biến tần này (cần tài khoản lắp đặt/đại lý).",
+      device: { type: info.model || inv.model || info.equipMode || null, firmware: ver || null, rated_power: nz(info.ratePower), state: info.runStatus ?? info.status ?? null },
+    };
+  },
+
+  async writeSetting(creds, cached, plantId, key, value) {
+    const { token, host } = await getToken(creds, cached);
+    const inv = (await inverters(host, token)).find((x) => String(x.plant?.id) === String(plantId));
+    if (!inv) throw new Error("Trạm chưa có biến tần trên PV Pro");
+    const sn = inv.sn;
+    const cur = (await get(host, token, `api/v1/common/setting/${sn}/read`)) || {};
+    const n = Number(value), on = value === true || value === "on" || value === 1;
+    const need = (min, max) => { if (!Number.isFinite(n) || n < min || n > max) throw new Error(`Giá trị phải từ ${min} đến ${max}`); return Math.round(n); };
+    const body = { sn };
+    const set = (f, v) => { body[f] = like(cur[f], v); };
+    let m;
+    if (key === "work_mode") { const k = Object.keys(WORK).find((x) => WORK[x] === value); if (k === undefined) throw new Error("Chế độ không hợp lệ"); set("sysWorkMode", k); }
+    else if (key === "energy_pattern") { const k = Object.keys(PATTERN).find((x) => PATTERN[x] === value); if (k === undefined) throw new Error("Lựa chọn không hợp lệ"); set("energyMode", k); }
+    else if (key === "solar_sell") set("solarSell", on ? 1 : 0);
+    else if (key === "tou_switch") set("peakAndVallery", on ? 1 : 0);
+    else if (NUMS[key]) set(NUMS[key][0], need(NUMS[key][1], NUMS[key][2]));
+    else if ((m = key.match(/^tou_(\d)_(time|power|soc|chg)$/))) {
+      const i = m[1];
+      if (m[2] === "time") { if (!/^\d{1,2}:\d{2}$/.test(String(value))) throw new Error("Giờ phải dạng HH:MM"); body[`sellTime${i}`] = String(cur[`sellTime${i}`] ?? "").includes(":") || cur[`sellTime${i}`] === undefined ? hhmm(value) : hhmm(value).replace(":", ""); }
+      if (m[2] === "power") set(`sellTime${i}Pac`, need(0, 30000));
+      if (m[2] === "soc") set(`cap${i}`, need(0, 100));
+      if (m[2] === "chg") { if (!CHG_OPTS.includes(value)) throw new Error("Lựa chọn không hợp lệ"); set(`time${i}on`, value === "Grid" || value === "Both"); set(`genTime${i}on`, value === "Generator" || value === "Both"); }
+    } else throw new Error("Cài đặt này chưa hỗ trợ qua PV Pro");
+    const r = await fetchJson(`${host}/api/v1/common/setting/${sn}/set`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r?.success) throw new Error(`PV Pro từ chối lệnh: ${r?.msg || "lỗi"}${/permission|auth|install/i.test(r?.msg || "") ? " (cần tài khoản lắp đặt/đại lý)" : ""}`);
   },
 
   // Lịch sử: ngày = plant/energy/{id}/day (5 phút); tháng = plant/energy/{id}/month
