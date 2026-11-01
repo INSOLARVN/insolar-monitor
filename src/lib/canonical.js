@@ -265,6 +265,9 @@ const CLOUD_MAP = [
   [/^load voltage l1$/i, (d, v) => (ph(d.load, 1).v = v)],
   [/^load voltage l2$/i, (d, v) => (ph(d.load, 2).v = v)],
   [/^load voltage l3$/i, (d, v) => (ph(d.load, 3).v = v)],
+  [/^load current l(\d)$/i, (d, v, mm) => (ph(d.load, +mm[1]).a = v)], // MỚI (01/11/2026)
+  [/^load power l(\d)$/i, (d, v, mm) => (ph(d.load, +mm[1]).w = v)], // MỚI (01/11/2026)
+  [/^generator power$/i, (d, v) => (d.gen.power = v)], // MỚI (01/11/2026)
   [/^battery voltage$/i, (d, v) => (d.battery.voltage = v)],
   [/^battery current$/i, (d, v) => (d.battery.current = v)],
   [/^battery power$/i, (d, v) => (d.battery.power = v)],
