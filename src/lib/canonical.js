@@ -285,6 +285,7 @@ const CLOUD_MAP = [
   [/^inverter status$|^running status$|^state$/i, (d, v) => (d.device.state = v)],
   [/^inverter alarm$/i, (d, v) => (d.device.alarm = v)],
   [/^inverter fault$/i, (d, v) => (d.device.fault = v)],
+  [/^battery bms link$/i, (d, v) => (d.battery.alarm = v)], // MỚI (01/11/2026): báo BMS không giao tiếp
   // MỚI (31/10/2026): tên thông số thật của Deye Cloud (đối chiếu dữ liệu trạm thật) — trước đây không khớp nên hiện "--"
   [/^pv daily power generation|^daily active production$/i, (d, v) => (d.pv.today_kwh = v)],
   [/^pv cumulative power generation|^total active production$/i, (d, v) => (d.pv.total_kwh = v)],

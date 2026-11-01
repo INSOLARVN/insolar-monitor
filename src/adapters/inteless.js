@@ -184,7 +184,9 @@ export default {
     const inv = (await inverters(host, token)).find((x) => String(x.plant?.id) === String(plantId));
     if (!inv) throw new Error("Trạm chưa có biến tần trên PV Pro");
     const sn = inv.sn;
-    const g = async (path, params) => { try { return (await get(host, token, path, params)) || {}; } catch { return {}; } };
+    // SỬA (01/11/2026): ghi lại lỗi từng endpoint để biết chính xác PV Pro có/không trả dữ liệu (không đoán)
+    const errs = {};
+    const g = async (path, params) => { try { return (await get(host, token, path, params)) || {}; } catch (e) { errs[path.replace(sn, "{sn}")] = String(e.message || e).slice(0, 160); return {}; } };
     const [flow, input, output, grid, load, bat, info, temps, cfg] = await Promise.all([
       g(`api/v1/inverter/${sn}/flow`), g(`api/v1/inverter/${sn}/realtime/input`), g(`api/v1/inverter/${sn}/realtime/output`),
       g(`api/v1/inverter/grid/${sn}/realtime`, { sn }), g(`api/v1/inverter/load/${sn}/realtime`, { sn }), g(`api/v1/inverter/battery/${sn}/realtime`, { sn, lan: "en" }),
@@ -217,7 +219,11 @@ export default {
     // Pin (Sunsynk/Deye: power + = xả)
     add("Battery Power", f.bat ?? bat.power, "W");
     add("Battery Voltage", bat.voltage, "V"); add("Battery Current", bat.current, "A");
-    add("SOC", f.soc ?? bat.soc, "%"); add("Battery Temperature", nz(bat.temp, bat.bmsTemp), "℃");
+    add("SOC", f.soc ?? bat.soc, "%"); // SỬA (01/11/2026): BMS không giao tiếp (bmsSoc/bmsVolt = 0) thì PV Pro trả nhiệt độ ảo (vd. -31,5°C) → không hiển thị
+    const bmsLink = nz(bat.bmsSoc, bat.bmsVolt, bat.batterySoc1, bat.batteryVolt1) !== null;
+    const bt = nz(bat.bmsTemp, bat.batteryTemp1, bmsLink ? bat.temp : null);
+    add("Battery Temperature", bt !== null && bt > -20 && bt < 90 ? bt : null, "℃");
+    if (!bmsLink) add("Battery BMS Link", "BMS chưa giao tiếp với biến tần (không có nhiệt độ, SOH, giới hạn sạc/xả)", "");
     add("SOH", nz(bat.soh, bat.bmsSoh), "%");
     add("Battery Rated Capacity", nz(bat.capacity, bat.correctCap, cfg.batteryCap), "Ah");
     add("Daily Charging Energy", bat.etodayChg, "kWh"); add("Daily Discharging Energy", bat.etodayDischg, "kWh");
@@ -228,6 +234,9 @@ export default {
     add("Rated Power", nz(info.ratePower, inv.ratePower), "W");
     // MỚI (01/11/2026): toàn bộ số liệu gốc của PV Pro vào bảng thông số (tên có tiền tố để không lẫn với thông số chuẩn)
     const raw = (tag, o) => { for (const [k, v] of Object.entries(o || {})) if (v !== null && v !== undefined && v !== "" && typeof v !== "object") L.push({ name: `${tag}.${k}`, key: `${tag}.${k}`, value: v, unit: null, group: "PV Pro – " + tag }); };
+    // Chẩn đoán: nhãn chuỗi nhiệt độ PV Pro trả về + lỗi endpoint
+    L.push({ name: "diag.temps", key: "diag.temps", value: (temps.infos || []).map((x) => `${x.label}:${(x.records || []).length}`).join(", ") || "rỗng", unit: null, group: "PV Pro – chẩn đoán" });
+    for (const [k, v] of Object.entries(errs)) L.push({ name: `diag.${k}`, key: `diag.${k}`, value: v, unit: null, group: "PV Pro – chẩn đoán" });
     raw("battery", bat); raw("grid", grid); raw("load", load); raw("output", output); raw("input", input); raw("flow", flow); raw("inverter", info);
     const ver = [info.masterVer, info.softVer, info.hmiVer].filter(Boolean).join(" / ");
     const settings = Object.keys(cfg).length ? settingsFrom(cfg) : null;
