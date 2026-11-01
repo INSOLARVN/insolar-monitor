@@ -133,7 +133,7 @@ export default {
       list.push(L(`PV${i} Voltage`, x["uPv" + i], "V", "PV"), L(`PV${i} Current`, x["iPv" + i], "A", "PV"), L(`PV${i} Power`, toW(x["pow" + i], x["pow" + i + "Str"]), "W", "PV"));
     }
     [["uAc1", "Grid Voltage L1", "V"], ["uAc2", "Grid Voltage L2", "V"], ["uAc3", "Grid Voltage L3", "V"],
-      ["iAc1", "Grid Current L1", "A"], ["iAc2", "Grid Current L2", "A"], ["iAc3", "Grid Current L3", "A"], ["fac", "Grid Frequency", "Hz"],
+      ["iAc1", "AC Current L1", "A"], ["iAc2", "AC Current L2", "A"], ["iAc3", "AC Current L3", "A"], ["fac", "Grid Frequency", "Hz"],
       ["inverterTemperature", "Inverter Temperature", "°C"], ["batteryCapacitySoc", "SOC", "%"], ["batteryHealthSoh", "Battery SOH", "%"],
       ["batteryVoltage", "Battery Voltage", "V"], ["storageBatteryCurrent", "Battery Current", "A"],
       ["bmsChargeCurrentLimit", "BMS Charge Current Limit", "A"], ["bmsDischargeCurrentLimit", "BMS Discharge Current Limit", "A"]]

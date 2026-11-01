@@ -195,9 +195,13 @@ const CLOUD_MAP = [
   [/^ac voltage r\/u\/a$|^grid voltage l1$|^ac voltage l1$|^grid voltage$/i, (d, v) => (ph(d.grid, 1).v = v)],
   [/^ac voltage s\/v\/b$|^grid voltage l2$|^ac voltage l2$/i, (d, v) => (ph(d.grid, 2).v = v)],
   [/^ac voltage t\/w\/c$|^grid voltage l3$|^ac voltage l3$/i, (d, v) => (ph(d.grid, 3).v = v)],
-  [/^ac current r\/u\/a$|^grid current l1$/i, (d, v) => (ph(d.grid, 1).a = v)],
-  [/^ac current s\/v\/b$|^grid current l2$/i, (d, v) => (ph(d.grid, 2).a = v)],
-  [/^ac current t\/w\/c$|^grid current l3$/i, (d, v) => (ph(d.grid, 3).a = v)],
+  // SỬA (01/11/2026): "AC current R/S/T" của cloud là dòng đầu ra BIẾN TẦN, không phải dòng điện lưới → đưa vào output
+  [/^ac current r\/u\/a$|^ac current l1$/i, (d, v) => (ph(d.output, 1).a = v)],
+  [/^ac current s\/v\/b$|^ac current l2$/i, (d, v) => (ph(d.output, 2).a = v)],
+  [/^ac current t\/w\/c$|^ac current l3$/i, (d, v) => (ph(d.output, 3).a = v)],
+  [/^grid current l1$/i, (d, v) => (ph(d.grid, 1).a = v)],
+  [/^grid current l2$/i, (d, v) => (ph(d.grid, 2).a = v)],
+  [/^grid current l3$/i, (d, v) => (ph(d.grid, 3).a = v)],
   [/^ac output frequency|^grid frequency$|^ac frequency$/i, (d, v) => (d.grid.freq = v)],
   [/^total grid power$|^grid power$|^grid total power$/i, (d, v) => (d.grid.power = v)],
   [/^daily energy (bought|purchased)$|^today('s)? (energy )?(purchased|bought)/i, (d, v) => (d.grid.today_import = v)],
@@ -227,7 +231,8 @@ const CLOUD_MAP = [
   [/^pv daily power generation|^daily active production$/i, (d, v) => (d.pv.today_kwh = v)],
   [/^pv cumulative power generation|^total active production$/i, (d, v) => (d.pv.total_kwh = v)],
   [/^ac voltage rua$|^grid voltage l1l2$/i, (d, v) => (ph(d.grid, 1).v = v)],
-  [/^ac current rua$|^grid current l1l2$/i, (d, v) => (ph(d.grid, 1).a = v)],
+  [/^ac current rua$/i, (d, v) => (ph(d.output, 1).a = v)], // SỬA (01/11/2026): dòng biến tần, không phải dòng lưới
+  [/^grid current l1l2$/i, (d, v) => (ph(d.grid, 1).a = v)],
   [/^daily grid feed in$/i, (d, v) => (d.grid.today_export = v)],
   [/^cumulative grid feed in$/i, (d, v) => (d.grid.total_export = v)],
   [/^cumulative energy purchased$/i, (d, v) => (d.grid.total_import = v)],
@@ -243,7 +248,7 @@ const CLOUD_MAP = [
   [/^total gen power$/i, (d, v) => (d.gen.power = v)],
   [/^gen voltage$/i, (d, v) => (d.gen.voltage = v)],
   [/^daily production generator$/i, (d, v) => (d.gen.today_kwh = v)],
-  [/^ac power l(\d)$/i, (d, v, mm) => (ph(d.grid, +mm[1]).w = v)], // SolaX: công suất AC từng pha
+  [/^ac power l(\d)$/i, (d, v, mm) => (ph(d.output, +mm[1]).w = v)], // SolaX: công suất AC biến tần từng pha (SỬA 01/11/2026: trước gán nhầm vào lưới)
   [/^battery rated capacity \(kwh\)$/i, () => {}],
 ];
 const str = (d, i) => { let x = d.pv.strings.find((s) => s.n === i); if (!x) { x = { n: i, v: null, a: null, w: null }; d.pv.strings.push(x); } return x; };
@@ -268,6 +273,19 @@ export function fromCloudList(list, source, extra = {}) {
     for (const p of d.load.phases) {
       if (p.w === null || p.w === undefined) p.w = Math.round(d.load.power / np);
       if ((p.a === null || p.a === undefined) && n(p.v)) p.a = Math.round((d.load.power / np / p.v) * 10) / 10;
+    }
+  }
+  // MỚI (01/11/2026): dòng/công suất từng pha của LƯỚI tính từ công suất lưới (cloud thường không trả dòng lưới riêng).
+  // Trước đây dòng biến tần (~dòng tải) bị hiện ở Điện lưới → lưới chỉ mua 141 W mà hiện 16 A.
+  for (const p of d.output.phases) {
+    const g = d.grid.phases.find((x) => x.l === p.l);
+    if (g && !n(p.v)) p.v = g.v;
+  }
+  if (n(d.grid.power) !== null && d.grid.phases.length) {
+    const np = d.grid.phases.length;
+    for (const p of d.grid.phases) {
+      if (p.w === null || p.w === undefined) p.w = Math.round(d.grid.power / np);
+      if ((p.a === null || p.a === undefined) && n(p.v)) p.a = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
     }
   }
   d.pv.strings.sort((a, b) => a.n - b.n);

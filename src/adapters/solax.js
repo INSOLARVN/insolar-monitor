@@ -68,7 +68,7 @@ function toList(creds, inv, bat, ex = {}) {
   add("Total Production", num(inv.totalYield), "kWh");
   for (let i = 1; i <= 3; i++) {
     add(`Grid Voltage L${i}`, num(inv[`acVoltage${i}`]), "V");
-    add(`Grid Current L${i}`, num(inv[`acCurrent${i}`]), "A");
+    add(`AC Current L${i}`, num(inv[`acCurrent${i}`]), "A"); // SỬA (01/11/2026): dòng đầu ra biến tần, không phải dòng lưới
   }
   add("Grid Frequency", num(inv.gridFrequency) || num(inv.acFrequency1), "Hz");
   // gridPower của SolaX: dương = bán, âm = mua → đổi sang quy ước app (dương = mua)
