@@ -204,7 +204,7 @@ export default {
     add("Total DC Input Power", f.pv ?? input.pac, "W");
     add("Daily Production", input.etoday, "kWh"); add("Total Production", input.etotal, "kWh");
     // Lưới: vip của grid là áp/dòng đo tại CT/đồng hồ lưới → đúng dòng LƯỚI
-    (grid.vip || []).forEach((x, i) => { add(`Grid Voltage L${i + 1}`, x.volt, "V"); add(`Grid Current L${i + 1}`, x.current, "A"); });
+    (grid.vip || []).forEach((x, i) => { add(`Grid Voltage L${i + 1}`, x.volt, "V"); add(`Grid Current L${i + 1}`, x.current, "A"); add(`Grid Power L${i + 1}`, x.power, "W"); });
     add("Grid Frequency", grid.fac, "Hz");
     add("Total Grid Power", f.grid ?? grid.pac, "W");
     add("Daily Energy Bought", grid.etodayFrom, "kWh"); add("Daily Energy Sold", grid.etodayTo, "kWh");
@@ -234,7 +234,6 @@ export default {
     // MỚI (01/11/2026): toàn bộ số liệu gốc của PV Pro vào bảng thông số (tên có tiền tố để không lẫn với thông số chuẩn)
     const raw = (tag, o) => { for (const [k, v] of Object.entries(o || {})) if (v !== null && v !== undefined && v !== "" && typeof v !== "object") L.push({ name: `${tag}.${k}`, key: `${tag}.${k}`, value: v, unit: null, group: "PV Pro – " + tag }); };
     // Chẩn đoán: nhãn chuỗi nhiệt độ PV Pro trả về + lỗi endpoint
-    L.push({ name: "diag.temps", key: "diag.temps", value: (temps.infos || []).map((x) => `${x.label}:${(x.records || []).length}:${JSON.stringify((x.records || []).slice(-2))}`).join(" | ").slice(0, 400) || "rỗng", unit: null, group: "PV Pro – chẩn đoán" });
     for (const [k, v] of Object.entries(errs)) L.push({ name: `diag.${k}`, key: `diag.${k}`, value: v, unit: null, group: "PV Pro – chẩn đoán" });
     raw("battery", bat); raw("grid", grid); raw("load", load); raw("output", output); raw("input", input); raw("flow", flow); raw("inverter", info);
     const ver = [info.masterVer, info.softVer, info.hmiVer].filter(Boolean).join(" / ");

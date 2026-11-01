@@ -214,26 +214,24 @@ function finish(d) {
   if (n(b.power) !== null && n(b.current) === null && n(b.voltage)) b.current = Math.round((b.power / b.voltage) * 10) / 10;
   // 3) Thiếu công suất tải → tính từ cân bằng
   if (n(d.load.power) === null && n(d.pv.power) !== null && n(g.power) !== null) d.load.power = Math.max(0, Math.round(d.pv.power + (n(b.power) || 0) + g.power));
-  // 4) Tải: thiếu dòng/công suất từng pha → ước tính từ công suất tải và điện áp (cos φ ≈ 1)
-  if (n(d.load.power) !== null && d.load.phases.length) {
-    const np = d.load.phases.length;
-    for (const p of d.load.phases) {
-      if (n(p.w) === null) p.w = Math.round(d.load.power / np);
-      if (n(p.a) === null && n(p.v)) p.a = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
+  // 4) Tải & 5) Lưới — SỬA (01/11/2026): chỉ suy công suất pha từ tổng khi hệ 1 pha (hệ 3 pha chia đều là SAI → để trống);
+  //    dòng chỉ tính từ công suất pha THẬT; dòng hãng trả lệch hẳn so với P/U (vd. 1,44 kW mà 0,5 A) thì tính lại từ P/U.
+  const fixPhases = (o, total) => {
+    if (!o.phases.length) return;
+    if (o.phases.length === 1 && n(total) !== null && n(o.phases[0].w) === null) o.phases[0].w = Math.round(total);
+    for (const p of o.phases) {
+      if (!n(p.v) || n(p.w) === null) continue;
+      const calc = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
+      if (n(p.a) === null || (Math.abs(p.w) > 200 && Math.abs(p.a) * p.v < 0.5 * Math.abs(p.w))) p.a = calc;
     }
-  }
-  // 5) Lưới: dòng từng pha tính từ công suất LƯỚI (không lấy dòng biến tần) — lưới mua 141 W phải ra ~0,6 A chứ không phải 16 A
+  };
+  fixPhases(d.load, d.load.power);
+  // Lưới: dòng từng pha tính từ công suất LƯỚI (không lấy dòng biến tần) — lưới mua 141 W phải ra ~0,6 A chứ không phải 16 A
   for (const p of d.output.phases) {
     const x = g.phases.find((q) => q.l === p.l);
     if (x && !n(p.v)) p.v = x.v;
   }
-  if (n(g.power) !== null && g.phases.length) {
-    const np = g.phases.length;
-    for (const p of g.phases) {
-      if (n(p.w) === null) p.w = Math.round(g.power / np);
-      if (n(p.a) === null && n(p.v)) p.a = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
-    }
-  }
+  fixPhases(g, g.power);
   return d;
 }
 
@@ -253,6 +251,7 @@ const CLOUD_MAP = [
   [/^ac current r\/u\/a$|^ac current l1$/i, (d, v) => (ph(d.output, 1).a = v)],
   [/^ac current s\/v\/b$|^ac current l2$/i, (d, v) => (ph(d.output, 2).a = v)],
   [/^ac current t\/w\/c$|^ac current l3$/i, (d, v) => (ph(d.output, 3).a = v)],
+  [/^grid power l(\d)$/i, (d, v, mm) => (ph(d.grid, +mm[1]).w = v)], // MỚI (01/11/2026)
   [/^grid current l1$/i, (d, v) => (ph(d.grid, 1).a = v)],
   [/^grid current l2$/i, (d, v) => (ph(d.grid, 2).a = v)],
   [/^grid current l3$/i, (d, v) => (ph(d.grid, 3).a = v)],
