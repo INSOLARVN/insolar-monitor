@@ -1,3 +1,4 @@
+import { balanceSigns } from "../lib/canonical.js";
 export const num = (v) => {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
@@ -58,6 +59,10 @@ export async function fetchJson(url, init = {}, timeoutMs = 20000) {
 
 // Mô hình trạm chuẩn hóa
 export function station(o) {
+  // MỚI (01/11/2026): tự sửa dấu pin/lưới nếu hãng trả ngược (kiểm tra PV + pin + lưới ≈ tải)
+  const { sb, sg } = balanceSigns(o.pv_power_w, o.load_power_w, o.battery_power_w, o.grid_power_w);
+  if (sb < 0) o = { ...o, battery_power_w: -num(o.battery_power_w) };
+  if (sg < 0) o = { ...o, grid_power_w: -num(o.grid_power_w) };
   return {
     ext_id: String(o.ext_id),
     name: o.name || String(o.ext_id),

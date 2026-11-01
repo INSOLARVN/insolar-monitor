@@ -24,8 +24,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 | `src/index.js` | Router API, đồng bộ cloud (cron 5 phút), chi tiết trạm, lịch sử, cài đặt từ xa qua cloud (`cloudSetting`), thời tiết (`weatherFor`, Open-Meteo, đệm 15 phút), `/flash` nạp firmware |
 | `src/auth.js` | Tài khoản người dùng (xem mục Đăng nhập) |
 | `src/gateway-hub.js` | Durable Object `GatewayHub`: 1 WebSocket/gateway ESP32, giải mã Modbus/CAN/BMS, ghi lệnh (chờ ack 20s), ghi D1 mỗi 5 phút |
-| `src/adapters/` | `solis.js` (HMAC-SHA1 + điều khiển `/v2/api/atReadBatch`, `/v2/api/control`), `deyecloud.js` (OpenAPI v1.0 + lệnh `/order/...`, chờ `GET /order/{id}` status 666), `solarman.js`, `solax.js`, `demo.js`, `util.js` (`station()` có `lat/lon`) |
-| `src/lib/` | `modbus-profile.js` (port ha-solarman, MIT), `can.js` (Pylontech LV 0x351…0x35F, 0x372/0x373), `bms.js` (JBD, Daly), `canonical.js` (quy ước dấu: pin + = xả, lưới + = mua), `simulator.js` |
+| `src/adapters/` | `solis.js` (HMAC-SHA1 + điều khiển `/v2/api/atReadBatch`, `/v2/api/control`), `deyecloud.js` (OpenAPI v1.0 + lệnh `/order/...`, chờ `GET /order/{id}` status 666), `solarman.js`, `solax.js`, `foxess.js` (API Key, chữ ký md5), `sigen.js` (Sigenergy OpenAPI, giới hạn 1 lần/5 phút/endpoint → đệm trong token_enc), `demo.js`, `util.js` (`station()` có `lat/lon`) |
+| `src/lib/` | `modbus-profile.js` (port ha-solarman, MIT), `can.js` (Pylontech LV 0x351…0x35F, 0x372/0x373), `bms.js` (JBD, Daly), `canonical.js` (quy ước dấu: pin + = xả, lưới + = mua; `finish()` tự đảo dấu pin/lưới nếu PV+pin+lưới≠tải, dòng lưới tính từ công suất lưới — dòng AC biến tần nằm ở `output`), `simulator.js` |
 | `src/profiles/` | 30 bản đồ thanh ghi inverter (từ ha-solarman, giấy phép kèm theo) |
 | `src/ui.html` | Toàn bộ giao diện 1 tệp (hash router). Kiểm cú pháp: tách `<script>` rồi `node --check` |
 | `public/img/house-06…18.webp`, `house-night.webp` | Ảnh render Blender ngôi nhà theo từng giờ |
@@ -45,7 +45,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.
-- Senergy, AuxSol, Chisage chưa có bản đồ thanh ghi công khai.
+- Senergy, AuxSol, Chisage, Sosen chưa có bản đồ thanh ghi / API cloud công khai (nếu dùng logger Solarman thì thêm qua Solarman).
+- FoxESS, Sigenergy (01/11/2026) **chưa thử với tài khoản thật**.
 - Firmware gateway đã biên dịch nhưng chưa chạy trên mạch thật.
 - Gắn tên miền riêng khi người dùng chọn (mở `routes` trong `wrangler.toml`).
 

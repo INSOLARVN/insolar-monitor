@@ -146,7 +146,7 @@ export function fromModbus(decoded, profileId, opts = {}) {
   d.params = decoded
     .filter((p) => p.platform === "sensor" || p.platform === "binary_sensor" || !p.platform)
     .map(({ key, name, group, value, uom }) => ({ key, name, group, value, uom }));
-  return d;
+  return finish(d);
 }
 
 // Bổ sung dữ liệu CAN/BMS vào phần pin
@@ -181,6 +181,60 @@ export function summary(d) {
     today_kwh: n(d.pv.today_kwh),
     total_kwh: n(d.pv.total_kwh),
   };
+}
+
+// MỚI (01/11/2026): kiểm tra cân bằng công suất PV + Pin(xả) + Lưới(mua) ≈ Tải để phát hiện hãng trả NGƯỢC DẤU pin/lưới.
+// Trả về { sb, sg } = hệ số dấu nên nhân cho pin, lưới (1 = giữ nguyên, -1 = đảo). Chỉ đảo khi đảo khớp rõ rệt hơn hẳn.
+export function balanceSigns(pv, load, bat, grid) {
+  pv = n(pv); load = n(load); bat = n(bat); grid = n(grid);
+  if (pv === null || load === null || (bat === null && grid === null)) return { sb: 1, sg: 1 };
+  const err = (sb, sg) => Math.abs(pv + sb * (bat || 0) + sg * (grid || 0) - load);
+  const tol = Math.max(150, 0.15 * Math.max(pv, load));
+  const base = err(1, 1);
+  if (base <= tol) return { sb: 1, sg: 1 };
+  let best = { sb: 1, sg: 1, e: base };
+  for (const [sb, sg] of [[1, -1], [-1, 1], [-1, -1]]) {
+    if (sb < 0 && !(Math.abs(bat || 0) > 50)) continue;
+    if (sg < 0 && !(Math.abs(grid || 0) > 50)) continue;
+    const e = err(sb, sg);
+    if (e < best.e) best = { sb, sg, e };
+  }
+  return best.e <= tol && best.e < base * 0.3 ? { sb: best.sb, sg: best.sg } : { sb: 1, sg: 1 };
+}
+
+// MỚI (01/11/2026): bước hoàn thiện chung cho mọi nguồn (gateway Modbus + cloud các hãng)
+function finish(d) {
+  const b = d.battery, g = d.grid;
+  // 1) Đảo dấu pin/lưới nếu hãng trả ngược quy ước (pin + = xả, lưới + = mua)
+  const { sb, sg } = balanceSigns(d.pv.power, d.load.power, b.power, g.power);
+  if (sb < 0) { b.power = -b.power; if (n(b.current) !== null) b.current = -b.current; d.sign_fixed = [...(d.sign_fixed || []), "battery"]; }
+  if (sg < 0) { g.power = -g.power; for (const p of g.phases) if (n(p.w) !== null) p.w = -p.w; d.sign_fixed = [...(d.sign_fixed || []), "grid"]; }
+  // 2) Dòng pin cùng dấu với công suất pin (nhiều hãng trả dòng luôn dương)
+  if (n(b.power) !== null && n(b.current) !== null && Math.abs(b.power) > 30 && Math.sign(b.power) !== Math.sign(b.current) && b.current !== 0) b.current = -b.current;
+  if (n(b.power) !== null && n(b.current) === null && n(b.voltage)) b.current = Math.round((b.power / b.voltage) * 10) / 10;
+  // 3) Thiếu công suất tải → tính từ cân bằng
+  if (n(d.load.power) === null && n(d.pv.power) !== null && n(g.power) !== null) d.load.power = Math.max(0, Math.round(d.pv.power + (n(b.power) || 0) + g.power));
+  // 4) Tải: thiếu dòng/công suất từng pha → ước tính từ công suất tải và điện áp (cos φ ≈ 1)
+  if (n(d.load.power) !== null && d.load.phases.length) {
+    const np = d.load.phases.length;
+    for (const p of d.load.phases) {
+      if (n(p.w) === null) p.w = Math.round(d.load.power / np);
+      if (n(p.a) === null && n(p.v)) p.a = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
+    }
+  }
+  // 5) Lưới: dòng từng pha tính từ công suất LƯỚI (không lấy dòng biến tần) — lưới mua 141 W phải ra ~0,6 A chứ không phải 16 A
+  for (const p of d.output.phases) {
+    const x = g.phases.find((q) => q.l === p.l);
+    if (x && !n(p.v)) p.v = x.v;
+  }
+  if (n(g.power) !== null && g.phases.length) {
+    const np = g.phases.length;
+    for (const p of g.phases) {
+      if (n(p.w) === null) p.w = Math.round(g.power / np);
+      if (n(p.a) === null && n(p.v)) p.a = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
+    }
+  }
+  return d;
 }
 
 // ---------- Từ cloud hãng (danh sách {name, value, unit}) ----------
@@ -223,6 +277,7 @@ const CLOUD_MAP = [
   [/^bms discharge current limit|^bms discharging current limit/i, (d, v) => (d.battery.discharge_limit = v)],
   [/^dc temperature|^radiator temperature|^heat ?sink temperature/i, (d, v) => (d.device.temp_dc = v)],
   [/^ac temperature|^inverter temperature|^igbt temperature/i, (d, v) => (d.device.temp_ac = v)],
+  [/^inverter ac power$|^ac output power$|^inverter output power$/i, (d, v) => (d.output.power = v)], // MỚI (01/11/2026)
   [/^rated power$/i, (d, v) => (d.device.rated_power = v)],
   [/^inverter status$|^running status$|^state$/i, (d, v) => (d.device.state = v)],
   [/^inverter alarm$/i, (d, v) => (d.device.alarm = v)],
@@ -267,29 +322,8 @@ export function fromCloudList(list, source, extra = {}) {
     }
     d.params.push({ key: it.key || name, name, group: it.group || "Thông số", value: val, uom: it.unit || null });
   }
-  // MỚI (31/10/2026): cloud hãng không trả dòng/công suất từng pha của tải → ước tính từ công suất tải và điện áp (gần đúng, cos φ ≈ 1)
-  if (n(d.load.power) !== null && d.load.phases.length) {
-    const np = d.load.phases.length;
-    for (const p of d.load.phases) {
-      if (p.w === null || p.w === undefined) p.w = Math.round(d.load.power / np);
-      if ((p.a === null || p.a === undefined) && n(p.v)) p.a = Math.round((d.load.power / np / p.v) * 10) / 10;
-    }
-  }
-  // MỚI (01/11/2026): dòng/công suất từng pha của LƯỚI tính từ công suất lưới (cloud thường không trả dòng lưới riêng).
-  // Trước đây dòng biến tần (~dòng tải) bị hiện ở Điện lưới → lưới chỉ mua 141 W mà hiện 16 A.
-  for (const p of d.output.phases) {
-    const g = d.grid.phases.find((x) => x.l === p.l);
-    if (g && !n(p.v)) p.v = g.v;
-  }
-  if (n(d.grid.power) !== null && d.grid.phases.length) {
-    const np = d.grid.phases.length;
-    for (const p of d.grid.phases) {
-      if (p.w === null || p.w === undefined) p.w = Math.round(d.grid.power / np);
-      if ((p.a === null || p.a === undefined) && n(p.v)) p.a = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
-    }
-  }
   d.pv.strings.sort((a, b) => a.n - b.n);
   for (const s of d.pv.strings) if (s.w === null && s.v !== null && s.a !== null) s.w = Math.round(s.v * s.a);
   if (d.pv.power === null || d.pv.power === undefined) d.pv.power = d.pv.strings.length ? d.pv.strings.reduce((t, x) => t + (x.w || 0), 0) : null;
-  return d;
+  return finish(d);
 }

@@ -177,7 +177,7 @@ async function stationDetail(env, st, ctx) {
     }
     // Bổ sung số liệu tổng từ danh sách trạm nếu cloud thiếu
     d.pv.power ??= st.pv_power_w; d.load.power ??= st.load_power_w; d.grid.power ??= st.grid_power_w;
-    d.battery.soc ??= st.battery_soc; d.pv.today_kwh ??= st.today_kwh; d.pv.total_kwh ??= st.total_kwh;
+    d.battery.soc ??= st.battery_soc; d.battery.power ??= st.battery_power_w; d.pv.today_kwh ??= st.today_kwh; d.pv.total_kwh ??= st.total_kwh;
     d.updated = new Date().toISOString();
     const stmts = [env.DB.prepare("INSERT OR REPLACE INTO details (station_id, json, updated_at) VALUES (?1,?2,?3)").bind(st.id, JSON.stringify(d), d.updated)];
     if (r.token) stmts.push(env.DB.prepare("UPDATE accounts SET token_enc=?2 WHERE id=?1").bind(acc.id, await encrypt(env.ENC_KEY, r.token)));

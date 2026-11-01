@@ -109,7 +109,8 @@ export default {
           status: STATE[r.state] || "offline",
           pv_power_w: toW(r.power, r.powerStr),
           load_power_w: toW(r.familyLoadPower, r.familyLoadPowerStr),
-          grid_power_w: toW(r.psum, r.psumStr),
+          grid_power_w: num(r.psum) === null ? null : -toW(r.psum, r.psumStr), // SỬA (01/11/2026): psum dương = bán → đổi dấu như trang chi tiết
+          battery_power_w: num(r.batteryPower) === null ? null : -toW(r.batteryPower, r.batteryPowerStr), // MỚI (01/11/2026): dương = sạc → app dương = xả
           battery_soc: r.batteryPercent ?? r.batteryCapacitySoc,
           today_kwh: toKWh(r.dayEnergy, r.dayEnergyStr),
           total_kwh: toKWh(r.allEnergy, r.allEnergyStr),
@@ -138,7 +139,9 @@ export default {
       ["batteryVoltage", "Battery Voltage", "V"], ["storageBatteryCurrent", "Battery Current", "A"],
       ["bmsChargeCurrentLimit", "BMS Charge Current Limit", "A"], ["bmsDischargeCurrentLimit", "BMS Discharge Current Limit", "A"]]
       .forEach(([k, n, u]) => x[k] !== undefined && list.push(L(n, x[k], u)));
-    list.push(L("Total DC Power", toW(x.pac, x.pacStr), "W"));
+    // SỬA (01/11/2026): pac là công suất AC đầu ra biến tần, KHÔNG phải công suất PV → PV lấy dcPac (hoặc tổng các chuỗi)
+    if (x.dcPac !== undefined) list.push(L("Total DC Power", toW(x.dcPac, x.dcPacStr), "W"));
+    if (x.pac !== undefined) list.push(L("Inverter AC Power", toW(x.pac, x.pacStr), "W"));
     // SolisCloud: batteryPower dương = đang sạc → đổi sang quy ước chung (dương = xả)
     if (x.batteryPower !== undefined) list.push(L("Battery Power", -toW(x.batteryPower, x.batteryPowerStr), "W"));
     if (x.familyLoadPower !== undefined) list.push(L("Load Power", toW(x.familyLoadPower, x.familyLoadPowerStr), "W"));
