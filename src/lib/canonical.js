@@ -233,7 +233,7 @@ function finish(d) {
       const va = n(p.a) === null ? null : Math.abs(p.a) * p.v, w = Math.abs(p.w);
       const r = ref && ref.find((q) => q.l === p.l);
       const copy = r && n(r.a) !== null && n(p.a) !== null && Math.abs(p.a) > 1 && Math.abs(Math.abs(p.a) - Math.abs(r.a)) <= Math.max(0.3, 0.05 * Math.abs(r.a)) && Math.abs(Math.abs(r.a) * p.v - w) > 200;
-      if (va === null || (w > 200 && va < 0.5 * w) || va > 2 * w + 250 || copy) p.a = calc;
+      if (va === null || (w > 100 && va < 0.85 * w) || va > 2 * w + 250 || copy) p.a = calc; // dòng×áp không thể nhỏ hơn công suất thực
     }
   };
   // Lưới: dòng từng pha tính từ công suất LƯỚI (không lấy dòng biến tần) — lưới mua 141 W phải ra ~0,6 A chứ không phải 16 A
@@ -241,6 +241,9 @@ function finish(d) {
     const x = g.phases.find((q) => q.l === p.l);
     if (x && !n(p.v)) p.v = x.v;
   }
+  // SỬA (03/11/2026): tải nhiều pha mà tổng công suất các pha lệch hẳn tổng tải (vd. 145 W so với 6,97 kW) → đó là cổng UPS, không phải tải nhà → bỏ số pha
+  { const ps = live(d.load).filter((p) => n(p.w) !== null), tot = n(d.load.power);
+    if (ps.length > 1 && tot !== null) { const sum = ps.reduce((t, p) => t + p.w, 0); if (Math.abs(sum - tot) > Math.max(300, 0.3 * Math.abs(tot))) for (const p of ps) { p.w = null; p.a = null; } } }
   fixPhases(d.load, d.load.power, null);
   fixPhases(g, g.power, d.output.phases);
   return d;
@@ -249,6 +252,14 @@ function finish(d) {
 // ---------- Từ cloud hãng (danh sách {name, value, unit}) ----------
 // Solarman / Deye Cloud trả về danh sách thông số có tên tiếng Anh giống app của hãng.
 const CLOUD_MAP = [
+  // SỬA (03/11/2026): đặt TRƯỚC các mẫu chung — "Daily/Total Production Generator" (máy phát) từng khớp nhầm "daily production" → sản lượng PV = 0
+  [/^(daily|total) production generator$/i, (d, v, mm) => (/daily/i.test(mm[1]) ? (d.gen.today_kwh = v) : null)],
+  // MỚI (03/11/2026): Deye Cloud — "Load Phase Power A/B/C" mới là TẢI NHÀ từng pha; "Load Power L1/L2/L3" chỉ là cổng dự phòng UPS
+  [/^load phase power ([abc])$/i, (d, v, mm) => { const p = ph(d.load, "abc".indexOf(mm[1].toLowerCase()) + 1); p.w = v; p.a = null; d.load.house_phases = true; }],
+  [/^load power l(\d)$/i, (d, v, mm) => { if (!d.load.house_phases) ph(d.load, +mm[1]).w = v; }],
+  [/^inverter output power l(\d)$/i, (d, v, mm) => (ph(d.output, +mm[1]).w = v)],
+  [/^inverter output power l1l2$/i, (d, v) => (ph(d.output, 1).w = v)],
+  [/^total inverter output power$/i, (d, v) => (d.output.power = v)],
   [/^(dc )?voltage pv(\d+)$|^pv(\d+) voltage$|^dc voltage pv(\d+)$/i, (d, v, mm) => str(d, +(mm[2] || mm[3] || mm[4])).v = v],
   [/^(dc )?current pv(\d+)$|^pv(\d+) current$|^dc current pv(\d+)$/i, (d, v, mm) => str(d, +(mm[2] || mm[3] || mm[4])).a = v],
   [/^(dc )?power pv(\d+)$|^pv(\d+) (input )?power$|^dc power pv(\d+)$/i, (d, v, mm) => str(d, +(mm[2] || mm[3] || mm[5])).w = v],
@@ -276,7 +287,6 @@ const CLOUD_MAP = [
   [/^load voltage l2$/i, (d, v) => (ph(d.load, 2).v = v)],
   [/^load voltage l3$/i, (d, v) => (ph(d.load, 3).v = v)],
   [/^load current l(\d)$/i, (d, v, mm) => (ph(d.load, +mm[1]).a = v)], // MỚI (01/11/2026)
-  [/^load power l(\d)$/i, (d, v, mm) => (ph(d.load, +mm[1]).w = v)], // MỚI (01/11/2026)
   [/^generator power$/i, (d, v) => (d.gen.power = v)], // MỚI (01/11/2026)
   [/^battery voltage$/i, (d, v) => (d.battery.voltage = v)],
   [/^battery current$/i, (d, v) => (d.battery.current = v)],
