@@ -395,6 +395,22 @@ select.inp option{background:var(--surface);color:var(--ink)}
   .gb-mobile-only{display:inline}
 }
 @media (prefers-reduced-motion:reduce){.gb-slider,.gb-pane,.gb-slider-txt{animation:none!important;transition:none!important}}
+/* MỚI (03/11/2026): máy tính — trải rộng giao diện thay vì giữ khổ điện thoại 760px */
+@media (min-width:1100px){
+  .wrap{max-width:min(1480px,100%);padding-left:28px;padding-right:28px}
+  .slist{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .tabs{padding:6px 10px}
+  .tab{flex-direction:row;justify-content:center;gap:8px;padding:10px 6px;font-size:14px}
+  .tab svg{width:21px;height:21px}
+  .ov{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px;align-items:start}
+  .ov>.scene{grid-row:span 2}
+  .ov>.quad{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0}
+  .ov>.card.mt{margin-top:0}
+  .ov>.card.wide{grid-column:1/-1}
+  #sv.cols{columns:2;column-gap:14px}
+  #sv.cols>.card{display:inline-block;width:100%;margin:0 0 14px;break-inside:avoid}
+}
+@media (min-width:1600px){.slist{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -911,7 +927,7 @@ async function renderStation(id, tab) {
   setTabs(ST_TABS(id), `#/st/${id}/${tab}`);
   const cached = S.st?.id === id ? S.st : S.stations.find((x) => x.id === id);
   const order = ["overview", "history", "battery", "inverter", "settings"];
-  app.innerHTML = `<div class="page"><div id="sh"></div><div class="wrap ${viewCls("st" + id, order.indexOf(tab))}" style="padding-top:12px" id="sv"><div class="spin"></div></div></div>`;
+  app.innerHTML = `<div class="page"><div id="sh"></div><div class="wrap ${viewCls("st" + id, order.indexOf(tab))}${["battery", "inverter", "settings"].includes(tab) ? " cols" : ""}" style="padding-top:12px" id="sv"><div class="spin"></div></div></div>`;
   drawStationHeader(cached, id);
   if (!cached || S.st?.id !== id) {
     try { S.st = await api(`/api/stations/${id}`); } catch (e) { $("#sv").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
@@ -1237,7 +1253,7 @@ function overviewHtml(d, status) {
   const dir = !isNum(gp) ? "--" : gp > 30 ? "Mua điện" : gp < -30 ? "Bán điện" : "Cân bằng";
   const bp = d.battery.power;
   const bstate = !isNum(bp) ? "" : bp > 30 ? "Đang xả" : bp < -30 ? "Đang sạc" : "Nghỉ";
-  return `${scene(d, status)}
+  return `<div class="ov">${scene(d, status)}
   <div class="quad">
     ${qcard("var(--sun)", "var(--sun-soft)", "panel", "Mái pin PV", d.pv.power, [...pvRows, ...(pvRatio(d.pv.power) !== null ? [["Tỉ lệ phát", Math.round(pvRatio(d.pv.power)) + "% của " + nf(S.st.capacity_kwp, 1) + " kWp"]] : []),
       ...(wxInfo(S.weather) ? [["Thời tiết", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°C" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + " W/m²" : "")]] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
@@ -1255,7 +1271,7 @@ function overviewHtml(d, status) {
     ${ring(bp, Math.max(3000, (d.battery.discharge_limit || 100) * 50), "var(--sun)", fW(bp).replace(" ", ""), bp > 0 ? "xả" : bp < 0 ? "sạc" : "", "Công suất")}
     ${ring(d.battery.current, d.battery.discharge_limit || 150, "var(--e)", isNum(d.battery.current) ? nf(d.battery.current, 1) + "A" : "--", d.battery.discharge_limit ? "tối đa " + Math.round(d.battery.discharge_limit) + "A" : "", "Dòng")}
   </div></div>
-  <div class="card mt"><h3>Năng lượng hôm nay</h3><div class="estrip">
+  <div class="card mt wide"><h3>Năng lượng hôm nay</h3><div class="estrip">
     <div class="echip"><span>Sản xuất</span><b class="ce">${nf(d.pv.today_kwh, 1)}</b> <small class="muted">kWh</small></div>
     <div class="echip"><span>Tiêu thụ</span><b style="color:var(--home)">${nf(d.load.today_kwh, 1)}</b> <small class="muted">kWh</small></div>
     <div class="echip"><span>Mua lưới</span><b class="cv">${nf(d.grid.today_import, 1)}</b> <small class="muted">kWh</small></div>
@@ -1263,11 +1279,11 @@ function overviewHtml(d, status) {
     <div class="echip"><span>Sạc pin</span><b class="cg">${nf(d.battery.today_charge, 1)}</b> <small class="muted">kWh</small></div>
     <div class="echip"><span>Xả pin</span><b class="cw">${nf(d.battery.today_discharge, 1)}</b> <small class="muted">kWh</small></div>
   </div></div>
-  <div class="card mt"><div class="plist">
+  <div class="card mt wide"><div class="plist">
     <div class="prow"><span>Trạng thái biến tần</span><b>${esc(viOpt(d.device.state) ?? "--")}</b></div>
     <div class="prow"><span>Nhiệt độ tản nhiệt / AC</span><b>${isNum(d.device.temp_dc) ? nf(d.device.temp_dc) + "°C" : "--"} / ${isNum(d.device.temp_ac) ? nf(d.device.temp_ac) + "°C" : "--"}</b></div>
     <div class="prow"><span>Thiết bị</span><b>${esc(d.device.profile_label || d.device.manufacturer || d.device.type || "--")}</b></div>
-    <div class="prow"><span>Cập nhật</span><b>${ago(d.updated)}</b></div></div></div>`;
+    <div class="prow"><span>Cập nhật</span><b>${ago(d.updated)}</b></div></div></div></div>`;
 }
 async function viewOverview() {
   const draw = () => {
