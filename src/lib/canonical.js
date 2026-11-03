@@ -216,22 +216,33 @@ function finish(d) {
   if (n(d.load.power) === null && n(d.pv.power) !== null && n(g.power) !== null) d.load.power = Math.max(0, Math.round(d.pv.power + (n(b.power) || 0) + g.power));
   // 4) Tải & 5) Lưới — SỬA (01/11/2026): chỉ suy công suất pha từ tổng khi hệ 1 pha (hệ 3 pha chia đều là SAI → để trống);
   //    dòng chỉ tính từ công suất pha THẬT; dòng hãng trả lệch hẳn so với P/U (vd. 1,44 kW mà 0,5 A) thì tính lại từ P/U.
-  const fixPhases = (o, total) => {
-    if (!o.phases.length) return;
-    if (o.phases.length === 1 && n(total) !== null && n(o.phases[0].w) === null) o.phases[0].w = Math.round(total);
-    for (const p of o.phases) {
-      if (!n(p.v) || n(p.w) === null) continue;
+  // SỬA (03/11/2026): đối chiếu dữ liệu thật — Deye Cloud ("Grid Current L1L2") và PV Pro (grid.vip.current) trả dòng ĐẦU RA BIẾN TẦN
+  //   thay cho dòng lưới (lưới 18 W mà 7,9 A; lưới 26 W mà 22,8 A). PV Pro còn trả công suất/dòng tải pha là cổng UPS (-3 W) trong khi tải nhà 5,3 kW.
+  //   → Pha "thật" = pha có áp > 50 V. Hệ 1 pha: công suất pha lệch hẳn tổng thì lấy tổng. Dòng lệch hẳn P/U (quá nhỏ HOẶC quá lớn) thì tính lại từ P/U.
+  const live = (o) => o.phases.filter((p) => !(n(p.v) !== null && p.v < 50 && !n(p.a) && !n(p.w)));
+  const fixPhases = (o, total, ref) => {
+    const ps = live(o);
+    if (!ps.length) return;
+    if (ps.length === 1 && n(total) !== null) {
+      const p = ps[0];
+      if (n(p.w) === null || Math.abs(p.w - total) > Math.max(150, 0.25 * Math.abs(total))) p.w = Math.round(total);
+    }
+    for (const p of ps) {
+      if (!(n(p.v) > 50) || n(p.w) === null) continue;
       const calc = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
-      if (n(p.a) === null || (Math.abs(p.w) > 200 && Math.abs(p.a) * p.v < 0.5 * Math.abs(p.w))) p.a = calc;
+      const va = n(p.a) === null ? null : Math.abs(p.a) * p.v, w = Math.abs(p.w);
+      const r = ref && ref.find((q) => q.l === p.l);
+      const copy = r && n(r.a) !== null && n(p.a) !== null && Math.abs(p.a) > 1 && Math.abs(Math.abs(p.a) - Math.abs(r.a)) <= Math.max(0.3, 0.05 * Math.abs(r.a)) && Math.abs(Math.abs(r.a) * p.v - w) > 200;
+      if (va === null || (w > 200 && va < 0.5 * w) || va > 2 * w + 250 || copy) p.a = calc;
     }
   };
-  fixPhases(d.load, d.load.power);
   // Lưới: dòng từng pha tính từ công suất LƯỚI (không lấy dòng biến tần) — lưới mua 141 W phải ra ~0,6 A chứ không phải 16 A
   for (const p of d.output.phases) {
     const x = g.phases.find((q) => q.l === p.l);
     if (x && !n(p.v)) p.v = x.v;
   }
-  fixPhases(g, g.power);
+  fixPhases(d.load, d.load.power, null);
+  fixPhases(g, g.power, d.output.phases);
   return d;
 }
 

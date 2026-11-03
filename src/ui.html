@@ -424,7 +424,7 @@ const ago = (iso) => {
 };
 const vnDate = (d = new Date()) => new Date(d.getTime() + 7 * 3600e3).toISOString().slice(0, 10);
 const STATUS = { online: "Trực tuyến", offline: "Ngoại tuyến", alarm: "Cảnh báo" };
-const BRAND = { solarman: "Solarman", deyecloud: "Deye Cloud", solis: "Solis", solax: "SolaX", foxess: "FoxESS", sigen: "Sigenergy", inteless: "PV Pro", demo: "Demo", deye: "Deye", srne: "SRNE", sofar: "Sofar", afore: "Afore", kstar: "Kstar" };
+const BRAND = { solarman: "Solarman", deyecloud: "Deye Cloud", solis: "Solis", solax: "SolaX", foxess: "FoxESS", sigen: "Sigenergy", inteless: "Deye · PV Pro", demo: "Demo", deye: "Deye", srne: "SRNE", sofar: "Sofar", afore: "Afore", kstar: "Kstar" };
 let toastT;
 function toast(t) { document.querySelectorAll(".toast").forEach((x) => x.remove()); const d = document.createElement("div"); d.className = "toast"; d.textContent = t; document.body.append(d); clearTimeout(toastT); toastT = setTimeout(() => d.remove(), 2800); }
 
