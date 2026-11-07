@@ -230,7 +230,8 @@ function make(biz) {
       const stations = [];
       for (const [i, it] of list.entries()) {
         let f = {};
-        if (i < REALTIME_MAX) { try { f = await call(s, "GET", `/maintain-s/fast/system/${it.id}`); } catch {} }
+        // SỬA (07/11/2026): Solarman chặn khi gọi dồn dập (HTTP 429) → giãn 250 ms giữa các trạm
+        if (i < REALTIME_MAX) { if (i) await new Promise((r) => setTimeout(r, 250)); try { f = await call(s, "GET", `/maintain-s/fast/system/${it.id}`); } catch {} }
         const t = isoFromAny(f.lastUpdateTime || it.lastUpdateTime);
         const net = String(f.networkStatus || it.networkStatus || "").toUpperCase();
         let status = net === "ALL_OFFLINE" ? "offline" : statusFromTime(t);
@@ -301,30 +302,51 @@ function make(biz) {
   },
 
   // MỚI (07/11/2026): cảnh báo giống mục "Cảnh báo" trên web Solarman — POST /maintain-s/operating/alert/search theo trạm
+  // SỬA (07/11/2026): gọi từng trạm bị Solarman chặn (HTTP 429 "limiter not allow") → lấy 1 lần cho cả tài khoản
+  // (không truyền plantId, phân trang), lọc theo trạm; nếu không được mới gọi từng trạm, cách nhau 1,2 giây, gặp 429 thì dừng.
   async fetchAlarms(creds, cached, stationIds, diag = []) {
+    const want = new Set(stationIds.map(String));
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const URL0 = (page) => `/maintain-s/operating/alert/search?order.direction=DESC&order.property=alertTime&page=${page}&size=100&total=0`;
+    const body = (plantId) => ({ deviceType: "", language: "en", level: "", startTime: "", levelList: null, ...(plantId ? { plantId: Number(plantId) } : {}) });
     const { out, fresh } = await W(creds, cached, async (s) => {
+      let raw = [], whole = false;
+      try {
+        for (let page = 1; page <= 5; page++) {
+          const r = await call(s, "POST", URL0(page), body(null));
+          const items = arr(r);
+          raw.push(...items);
+          if (page === 1) diag.push(`toàn tài khoản: ${num(r.total) ?? items.length} mục${items[0] ? ", khoá [" + Object.keys(items[0]).join(",") + "]" : ""}`);
+          if (items.length < 100) break;
+          await sleep(800);
+        }
+        whole = true;
+      } catch (e) { diag.push(`toàn tài khoản: ${String(e.message || e).slice(0, 120)}`); }
+      // Một số tài khoản bắt buộc plantId → gọi từng trạm, chậm
+      if (!whole) {
+        for (const id of stationIds) {
+          try { raw.push(...arr(await call(s, "POST", URL0(1).replace("size=100", "size=50"), body(id))).map((a) => ({ plantId: id, ...a }))); }
+          catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 100)}`); if (/429|limiter/.test(String(e.message))) break; }
+          await sleep(1200);
+        }
+      }
       const res = [];
       const since = Date.now() - 7 * 86400e3;
-      for (const id of stationIds) {
-        let r;
-        try {
-          r = await call(s, "POST", `/maintain-s/operating/alert/search?order.direction=DESC&order.property=alertTime&page=1&size=50&total=0`,
-            { deviceType: "", language: "en", level: "", startTime: "", levelList: null, plantId: Number(id) });
-        } catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 160)}`); continue; }
-        if (diag.length < 3) diag.push(`${id}: ${arr(r).length} mục, khoá [${Object.keys(r || {}).join(",")}]${arr(r)[0] ? " mẫu " + JSON.stringify(arr(r)[0]).slice(0, 300) : ""}`);
-        for (const a of arr(r)) {
-          const start = a.alertTime ?? a.startTime ?? a.alarmTime;
-          const end = a.recoveryTime ?? a.endTime ?? a.alertEndTime ?? null;
-          const t = isoFromAny(start);
-          if (t && new Date(t).getTime() < since && end) continue;
-          const lv = String(a.level ?? a.importance ?? a.alertLevel ?? "");
-          res.push(alarm({
-            ext_id: a.plantId ?? a.stationId ?? id, code: a.alertCode ?? a.ruleId ?? a.alertId ?? a.showName, message: a.showName || a.alertName || a.name || a.alertCode,
-            advice: a.solution || a.suggestion, level: /^2$|^3$|fault|high|serious|urgent/i.test(lv) ? "fault" : /^0$|info|low|tip/i.test(lv) ? "info" : "warning",
-            device_sn: a.deviceSn, start, end: num(end) || (end && !/^0$/.test(String(end))) ? end : null,
-            active: a.alertStatus !== undefined ? /^(0|1|ALERT|UNRECOVERED|ACTIVE)$/i.test(String(a.alertStatus)) && !num(end) : undefined,
-          }));
-        }
+      for (const a of raw) {
+        if (a.plantId != null && !want.has(String(a.plantId))) continue;
+        const start = a.alertTime ?? a.startTime ?? a.alarmTime;
+        const end = a.recoveryTime ?? a.restoreTime ?? a.endTime ?? a.alertEndTime ?? null;
+        const t = isoFromAny(start);
+        if (t && new Date(t).getTime() < since && end) continue;
+        const lv = String(a.level ?? a.importance ?? a.alertLevel ?? "");
+        const st = a.alertStatus ?? a.status ?? a.state;
+        res.push(alarm({
+          ext_id: a.plantId ?? a.stationId, code: a.code ?? a.alertCode ?? a.ruleId ?? a.alertId ?? a.showName,
+          message: [a.code ? (a.addr ? a.addr + " " : "") + a.code : null, a.showName || a.alertName || a.name].filter(Boolean).join(" · ") || "Cảnh báo",
+          advice: a.solution || a.suggestion || a.customAlertConfigDisplayReason, level: /^2$|^3$|fault|high|serious|urgent/i.test(lv) ? "fault" : /^0$|info|low|tip/i.test(lv) ? "info" : "warning",
+          device_sn: a.deviceSn, start, end: num(end) ? end : null,
+          active: st !== undefined && st !== null ? /^(0|1|ALERT|UNRECOVERED|ACTIVE|UNHANDLED)$/i.test(String(st)) && !num(end) : !num(end),
+        }));
       }
       return res;
     });

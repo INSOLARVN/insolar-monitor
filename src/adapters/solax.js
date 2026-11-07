@@ -249,8 +249,11 @@ export default {
     const out = [];
     for (const id of plantIds) {
       let r;
-      try { r = await get(creds, token, "/openapi/v2/alarm/page_alarm_info", { plantId: id, alarmState: "1", pageNo: "1" }); }
-      catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 160)}`); continue; }
+      // SỬA (07/11/2026): lấy cả cảnh báo đang xảy ra (alarmState 1) và đã hết (0) để có lịch sử như app SolaxCloud
+      try {
+        r = await get(creds, token, "/openapi/v2/alarm/page_alarm_info", { plantId: id, alarmState: "1", pageNo: "1" });
+        try { const h = await get(creds, token, "/openapi/v2/alarm/page_alarm_info", { plantId: id, alarmState: "0", pageNo: "1" }); r = { ...r, records: [...(r?.records || []), ...(h?.records || []).slice(0, 30)] }; } catch {}
+      } catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 160)}`); continue; }
       if (diag.length < 3) diag.push(`${id}: ${(r?.records || []).length} mục, khoá [${Object.keys(r || {}).join(",")}]${r?.records?.[0] ? " mẫu " + JSON.stringify(r.records[0]).slice(0, 300) : ""}`);
       for (const a of r?.records || []) {
         const lv = String(a.alarmLevel ?? a.level ?? "");

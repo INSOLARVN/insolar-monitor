@@ -288,7 +288,7 @@ export default {
       for (let page = 1; page <= 5; page++) {
         const r = await post(creds, token, "/station/alertList", { stationId: Number(id), startTimestamp: start, endTimestamp: end, page, size: 50 });
         const items = r.list || r.stationAlertItems || r.alertList || r.alertListItems || r.items || [];
-        if (diag.length < 3) diag.push(`${id}: ${items.length} mục, khoá [${Object.keys(r).join(",")}]${items[0] ? " mẫu " + JSON.stringify(items[0]).slice(0, 300) : ""}`);
+        if (diag.length < 3) diag.push(`${id}: ${items.length} mục (total ${r.total}), khoá [${Object.keys(r).join(",")}]${items[0] ? " mẫu " + JSON.stringify(items[0]).slice(0, 300) : ""}`);
         for (const a of items) {
           const name = String(a.alertName || a.alertMsg || a.alertCode || "");
           const lv = num(a.level);
