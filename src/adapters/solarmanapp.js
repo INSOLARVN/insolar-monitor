@@ -337,7 +337,7 @@ function make(biz) {
         const start = a.alertTime ?? a.startTime ?? a.alarmTime;
         const end = a.recoveryTime ?? a.restoreTime ?? a.endTime ?? a.alertEndTime ?? null;
         const t = isoFromAny(start);
-        if (t && new Date(t).getTime() < since && end) continue;
+        if (t && new Date(t).getTime() < since) continue; // chỉ giữ 7 ngày gần nhất
         const lv = String(a.level ?? a.importance ?? a.alertLevel ?? "");
         const st = a.alertStatus ?? a.status ?? a.state;
         res.push(alarm({
@@ -345,7 +345,8 @@ function make(biz) {
           message: [a.code ? (a.addr ? a.addr + " " : "") + a.code : null, a.showName || a.alertName || a.name].filter(Boolean).join(" · ") || "Cảnh báo",
           advice: a.solution || a.suggestion || a.customAlertConfigDisplayReason, level: /^2$|^3$|fault|high|serious|urgent/i.test(lv) ? "fault" : /^0$|info|low|tip/i.test(lv) ? "info" : "warning",
           device_sn: a.deviceSn, start, end: num(end) ? end : null,
-          active: st !== undefined && st !== null ? /^(0|1|ALERT|UNRECOVERED|ACTIVE|UNHANDLED)$/i.test(String(st)) && !num(end) : !num(end),
+          // SỬA (07/11/2026): API trả cả lịch sử, không có giờ kết thúc → chỉ coi là đang diễn ra nếu phát sinh trong 2 giờ gần nhất
+          active: (st !== undefined && st !== null ? /^(0|1|ALERT|UNRECOVERED|ACTIVE|UNHANDLED)$/i.test(String(st)) : true) && !num(end) && (!t || Date.now() - new Date(t).getTime() < 2 * 3600e3),
         }));
       }
       return res;

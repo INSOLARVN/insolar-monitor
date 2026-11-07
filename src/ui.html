@@ -964,7 +964,7 @@ function stationAlarmsHtml() {
   if (!L || S.st?.gateway_id) return "";
   const act = L.filter((a) => a.active);
   return `<div class="card mt"><h3>${ico("alert", `style="width:20px;height:20px;color:${act.length ? "var(--danger)" : "var(--muted)"}"`)} Cảnh báo từ ${esc(BRAND[S.st.brand] || "hãng")} <span class="tag ${act.length ? "r" : ""}">${act.length ? act.length + " đang xảy ra" : "Không có lỗi"}</span></h3>
-    ${L.length ? L.slice(0, 15).map((a) => alarmRow(a, false)).join("") : `<p class="small muted" style="margin:0">Chưa có cảnh báo nào trong 7 ngày (đồng bộ 15 phút/lần).</p>`}</div>`;
+    ${act.length ? act.slice(0, 15).map((a) => alarmRow(a, false)).join("") : `<p class="small muted" style="margin:0">Không có lỗi đang diễn ra (đồng bộ 15 phút/lần).</p>`}</div>`;
 }
 const FA = { active: "1", brand: "" };
 async function renderAlarms() {
@@ -984,10 +984,10 @@ async function loadAlarms() {
   const brands = [...new Set(L.map(bn))];
   const list = L.filter((a) => !FA.brand || bn(a) === FA.brand);
   const c = (lv) => list.filter((a) => a.active && a.level === lv).length;
-  el.innerHTML = `<div class="chips">${[["1", "Đang xảy ra"], ["", "Tất cả 7–90 ngày"]].map(([k, t]) => `<button class="chip ${FA.active === k ? "on" : ""}" data-a="${k}">${t}</button>`).join("")}</div>
-    ${brands.length > 1 ? `<div class="chips brands">${["", ...brands].map((k) => `<button class="chip ${FA.brand === k ? "on" : ""}" data-b="${esc(k)}">${esc(k || "Mọi hãng")}</button>`).join("")}</div>` : ""}
+  // SỬA (07/11/2026): người dùng chỉ cần lỗi đang diễn ra — bỏ mục lịch sử
+  el.innerHTML = `${brands.length > 1 ? `<div class="chips brands">${["", ...brands].map((k) => `<button class="chip ${FA.brand === k ? "on" : ""}" data-b="${esc(k)}">${esc(k || "Mọi hãng")}</button>`).join("")}</div>` : ""}
     <div class="card mt"><h3>${ico("alert", 'style="width:20px;height:20px;color:var(--danger)"')} ${list.length} mục <span class="tag r">${c("fault")} lỗi</span><span class="tag y" style="margin-left:6px">${c("warning")} cảnh báo</span></h3>
-    ${list.length ? list.map((a) => alarmRow(a, true)).join("") : `<p class="small muted" style="margin:0">Không có cảnh báo nào. Hệ thống đồng bộ cảnh báo từ Deye Cloud, SolisCloud, Solarman, SolaX, PV Pro 15 phút/lần.</p>`}</div>`;
+    ${list.length ? list.map((a) => alarmRow(a, true)).join("") : `<p class="small muted" style="margin:0">Không có lỗi nào đang diễn ra. Hệ thống đồng bộ cảnh báo từ Deye Cloud, SolisCloud, Solarman, SolaX, PV Pro 15 phút/lần.</p>`}</div>`;
   el.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => { FA.active = b.dataset.a; loadAlarms(); }));
   el.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { FA.brand = b.dataset.b; loadAlarms(); }));
 }
@@ -1363,7 +1363,7 @@ async function viewOverview() {
     drawStationHeader(S.st, S.st.id);
   };
   // MỚI (07/11/2026): cảnh báo/lỗi của trạm lấy từ cloud hãng
-  if (!SHARE && S.alarmsFor !== S.st.id) { S.stAlarms = null; S.alarmsFor = S.st.id; api(`/api/alarms?station=${S.st.id}&limit=30`).then((r) => { S.stAlarms = r; draw(); }).catch(() => {}); }
+  if (!SHARE && S.alarmsFor !== S.st.id) { S.stAlarms = null; S.alarmsFor = S.st.id; api(`/api/alarms?station=${S.st.id}&active=1&limit=30`).then((r) => { S.stAlarms = r; draw(); }).catch(() => {}); }
   if (!S.detail) { try { await loadDetail(); } catch (e) { $("#sv").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; } }
   draw();
   window.__insRedraw = draw;
