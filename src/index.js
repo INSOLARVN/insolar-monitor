@@ -80,6 +80,8 @@ async function ensureAlarms(env) {
     UNIQUE(station_id, code, start_at))`).run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS alarms_active ON alarms(active, station_id)").run();
   await env.DB.prepare("ALTER TABLE accounts ADD COLUMN alarm_note TEXT").run().catch(() => {}); // MỚI (07/11/2026): chẩn đoán đồng bộ cảnh báo
+  // MỚI (07/11/2026): giá bán điện từng trạm (đ/kWh) để tính tiền khai thác; NULL = dùng giá mặc định 2.000 đ/kWh
+  await env.DB.prepare("ALTER TABLE stations ADD COLUMN price_kwh REAL").run().catch(() => {});
   alarmsReady = true;
 }
 const ALARM_MAX_STATIONS = 60; // giới hạn số trạm/lượt để không vượt số request của Worker
@@ -266,6 +268,18 @@ async function cloudHistory(env, st, range, d, ctx) {
   } catch (e) { return { error: String(e.message || e) }; }
 }
 
+// MỚI (07/11/2026): sản lượng tháng/năm (cộng max today_kwh từng ngày trong readings) để tính tiền khai thác
+async function energySum(env, st) {
+  try {
+    const d = vnToday();
+    const r = await env.DB.prepare(
+      `SELECT SUM(CASE WHEN day >= ?3 THEN pv ELSE 0 END) AS month, SUM(pv) AS year FROM
+        (SELECT substr(datetime(ts,'+7 hours'),1,10) AS day, MAX(today_kwh) AS pv FROM readings WHERE station_id=?1 AND ts >= ?2 GROUP BY day)`
+    ).bind(st.id, new Date(d.slice(0, 4) + "-01-01T00:00:00+07:00").toISOString(), d.slice(0, 7) + "-01").first();
+    return { today: st.today_kwh ?? null, month: r?.month ?? null, year: r?.year ?? null, total: st.total_kwh ?? null };
+  } catch { return null; }
+}
+
 async function history(env, st, range, date, ctx) {
   const d = /^\d{4}-\d{2}-\d{2}$/.test(date || "") ? date : vnToday();
   const cloud = await cloudHistory(env, st, range, d, ctx);
@@ -320,7 +334,7 @@ function demoDay(st, d) {
 // SỬA (31/10/2026): thêm s.account_id, s.ext_id (mã trạm bên hãng, thiếu → gọi cloud bằng 'undefined') — thiếu cột này làm mở chi tiết trạm cloud báo D1_TYPE_ERROR (bind undefined)
 const STATION_COLS = `s.id, s.brand, s.name, s.customer, s.phone, s.note, s.address, s.capacity_kwp, s.battery_kwh, s.status, s.pv_power_w,
   s.load_power_w, s.grid_power_w, s.battery_power_w, s.battery_soc, s.today_kwh, s.total_kwh, s.data_time, s.synced_at, s.share_token,
-  s.gateway_id, s.account_id, s.ext_id, s.lat, s.lon, COALESCE(a.label, 'Gateway INSOLAR') AS account_label,
+  s.gateway_id, s.account_id, s.ext_id, s.lat, s.lon, s.price_kwh, COALESCE(a.label, 'Gateway INSOLAR') AS account_label,
   (SELECT COUNT(*) FROM alarms al WHERE al.station_id=s.id AND al.active=1) AS alarm_count,
   (SELECT COUNT(*) FROM alarms al WHERE al.station_id=s.id AND al.active=1 AND al.level='fault') AS fault_count`;
 
@@ -368,7 +382,8 @@ async function api(req, env, url, ctx) {
     const det = await stationDetail(env, st, ctx);
     if (det.detail) { det.detail.settings = []; det.detail.params = []; }
     const { customer, phone, note, share_token, gateway_id, account_id, ext_id, account_label, lat, lon, ...pub } = st;
-    return json({ station: pub, ...det, weather: await weatherFor(env, st) });
+    const [weather, energy] = await Promise.all([weatherFor(env, st), energySum(env, st)]);
+    return json({ station: pub, ...det, weather, energy });
   }
 
   const me = await currentUser(req, env);
@@ -392,7 +407,10 @@ async function api(req, env, url, ctx) {
     if (!st) return json({ error: "Không tìm thấy trạm" }, 404);
     const sub = m[2];
     if (!sub && method === "GET") return json(st);
-    if (sub === "detail") return json({ ...(await stationDetail(env, st, ctx)), weather: await weatherFor(env, st) });
+    if (sub === "detail") {
+      const [det, weather, energy] = await Promise.all([stationDetail(env, st, ctx), weatherFor(env, st), energySum(env, st)]);
+      return json({ ...det, weather, energy });
+    }
     if (sub === "history") return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date"), ctx));
     if (sub === "commands") {
       const { results } = await env.DB.prepare("SELECT * FROM commands WHERE station_id=?1 ORDER BY id DESC LIMIT 50").bind(st.id).all();
@@ -415,13 +433,18 @@ async function api(req, env, url, ctx) {
     }
     if (!sub && method === "PATCH") {
       const b = await req.json();
-      await env.DB.prepare("UPDATE stations SET customer=?2, phone=?3, note=?4, name=COALESCE(?5,name), capacity_kwp=COALESCE(?6,capacity_kwp), battery_kwh=?7 WHERE id=?1")
+      if ("customer" in b || "name" in b) await env.DB.prepare("UPDATE stations SET customer=?2, phone=?3, note=?4, name=COALESCE(?5,name), capacity_kwp=COALESCE(?6,capacity_kwp), battery_kwh=?7 WHERE id=?1")
         .bind(st.id, b.customer ?? null, b.phone ?? null, b.note ?? null, b.name || null, b.capacity_kwp ? Number(b.capacity_kwp) : null, b.battery_kwh ? Number(b.battery_kwh) : null).run();
       if ("lat" in b || "lon" in b) {
         await ensureLatLon(env);
         const la = b.lat === "" || b.lat === null ? null : Number(b.lat), lo = b.lon === "" || b.lon === null ? null : Number(b.lon);
         if ((la !== null && !(Math.abs(la) <= 90)) || (lo !== null && !(Math.abs(lo) <= 180))) return json({ error: "Toạ độ không hợp lệ" }, 400);
         await env.DB.prepare("UPDATE stations SET lat=?2, lon=?3 WHERE id=?1").bind(st.id, la, lo).run();
+      }
+      if ("price_kwh" in b) { // MỚI (07/11/2026): giá điện tính tiền khai thác
+        const pr = b.price_kwh === "" || b.price_kwh === null ? null : Number(b.price_kwh);
+        if (pr !== null && !(pr >= 0 && pr < 1e6)) return json({ error: "Giá điện không hợp lệ" }, 400);
+        await env.DB.prepare("UPDATE stations SET price_kwh=?2 WHERE id=?1").bind(st.id, pr).run();
       }
       return json({ ok: true });
     }

@@ -44,6 +44,9 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 6. **Cảnh báo/sự cố từ cloud hãng (07/11/2026):** adapter có `fetchAlarms` (Deye `/station/alertList`, Solis `/v1/api/alarmList`, SolaX `/openapi/v2/alarm/page_alarm_info`, PV Pro `api/v1/event/{sn}/realtime`, Solarman OpenAPI `/device/v1.0/alertList`, Solarman app `/maintain-s/operating/alert/search`) → bảng `alarms` (tự tạo trong `ensureAlarms`), đồng bộ 15 phút/lần (hoặc khi bấm đồng bộ), tối đa 60 trạm/tài khoản/lượt. Trang `#/alarms` (nút chuông), thẻ cảnh báo trong Tổng quan trạm; trạm có lỗi đang mở hiện "Cảnh báo". Danh sách trạm có hàng lọc theo hãng. FoxESS, Sigenergy, gateway chưa có. **Chưa thử với tài khoản thật.**
 
+7. **Tiền khai thác (07/11/2026):** mỗi trạm có `stations.price_kwh` (đ/kWh, trống = 2.000); thẻ "Tiền khai thác" ở Tổng quan (hôm nay / tháng / năm / tổng = sản lượng PV × giá; tháng/năm cộng từ `readings` qua `energySum`). Bấm nhãn giá để sửa.
+8. **Tìm kiếm danh sách trạm (07/11/2026):** ô tìm nằm ngoài vùng vẽ lại, chờ 150 ms, bỏ qua lúc bộ gõ đang ghép dấu, tìm không dấu (`fold`), hiện 40 trạm đầu + "Xem thêm".
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.
