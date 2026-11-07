@@ -1482,14 +1482,22 @@ async function viewBattery() {
     const d = S.detail;
     if (!d) { el.innerHTML = `<div class="empty">Chưa có dữ liệu.${S.detailErr ? "<br><small>" + esc(S.detailErr) + "</small>" : ""}</div>`; return; } // SỬA (31/10/2026): hiện lỗi thật từ cloud
     const b = d.battery, can = d.can, bms = d.bms;
+    // SỬA (07/11/2026): cloud không trả SOH / nhiệt độ thì ẩn vòng đó thay vì hiện "--"; dung lượng lấy kWh của trạm nếu không có Ah
+    const gs = [ring(b.soc, 100, "var(--bat)", isNum(b.soc) ? Math.round(b.soc) + "%" : "--", "SOC", "Mức pin")];
+    if (isNum(b.soh)) gs.push(ring(b.soh, 100, "var(--v)", Math.round(b.soh) + "%", "SOH", "Sức khỏe"));
+    if (isNum(b.temp)) gs.push(ring(b.temp, 60, "var(--e)", nf(b.temp, 1) + "°", "°C", "Nhiệt độ"));
+    if (isNum(b.cycles_total) && gs.length < 3) gs.push(ring(b.cycles_total, 6000, "var(--sun)", nf(b.cycles_total, 0), "chu kỳ", "Chu kỳ"));
+    const capTxt = isNum(b.capacity_ah) ? nf(b.capacity_ah, 0) + " Ah" : isNum(b.capacity_kwh) ? nf(b.capacity_kwh, 1) + " kWh" : isNum(S.st?.battery_kwh) ? nf(S.st.battery_kwh, 1) + " kWh" : "--";
+    const both = (a, c, f) => (a === null || a === undefined) && (c === null || c === undefined) ? null : `${f(a)} / ${f(c)}`;
+    const extra = [["Trạng thái pin", b.status != null ? esc(viOpt(b.status) ?? b.status) : null], ["Giới hạn sạc / xả (BMS)", both(b.charge_limit, b.discharge_limit, fA)],
+      ["Tổng sạc / xả", both(b.total_charge, b.total_discharge, fK)], ["Cảnh báo / lỗi pin", both(b.alarm, b.fault, (x) => esc(viOpt(x) ?? x ?? "--"))]].filter((r) => r[1] !== null);
+    // Mọi thông số pin/BMS hãng trả về (để không sót dữ liệu khi tên thông số lạ)
+    const shown = /^(battery )?(voltage|current|power|soc|soh)$/i;
+    const bp = (d.params || []).filter((p) => (p.group === "BMS" || /batt|bms|\bbat/i.test(p.name + " " + (p.key || ""))) && p.value !== null && p.value !== "" && !shown.test(p.name));
     let html = `<div class="card"><h3>${ico("battery", 'style="width:20px;height:20px;color:var(--bat)"')} Tổng quan pin</h3>
-      <div class="gauges" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-        ${ring(b.soc, 100, "var(--bat)", isNum(b.soc) ? Math.round(b.soc) + "%" : "--", "SOC", "Mức pin")}
-        ${ring(b.soh, 100, "var(--v)", isNum(b.soh) ? Math.round(b.soh) + "%" : "--", "SOH", "Sức khỏe")}
-        ${ring(b.temp, 60, "var(--e)", isNum(b.temp) ? nf(b.temp, 1) + "°" : "--", "°C", "Nhiệt độ")}
-      </div>
+      <div class="gauges" style="grid-template-columns:repeat(${gs.length},minmax(0,1fr))">${gs.join("")}</div>
       <div class="stat3 mt"><div><span>Điện áp</span><b class="cv">${fV(b.voltage)}</b></div><div><span>Dòng</span><b class="cv">${fA(b.current)}</b></div><div><span>Công suất</span><b class="cw">${fW(b.power)}</b></div>
-      <div><span>Sạc hôm nay</span><b class="cg">${fK(b.today_charge)}</b></div><div><span>Xả hôm nay</span><b class="ce">${fK(b.today_discharge)}</b></div><div><span>Dung lượng</span><b>${isNum(b.capacity_ah) ? nf(b.capacity_ah, 0) + " Ah" : "--"}</b></div></div></div>`;
+      <div><span>Sạc hôm nay</span><b class="cg">${fK(b.today_charge)}</b></div><div><span>Xả hôm nay</span><b class="ce">${fK(b.today_discharge)}</b></div><div><span>Dung lượng</span><b>${capTxt}</b></div></div></div>`;
     // BMS cell
     if (bms) {
       const cells = bms.cells || [];
@@ -1530,9 +1538,8 @@ async function viewBattery() {
       ${b.packs.map((p) => `<tr><td><b>#${p.n}</b></td><td>${p.soc ?? "--"}%</td><td>${fV(p.v)}</td><td>${fA(p.a)}</td><td>${isNum(p.cell_max) ? nf(p.cell_max, 3) + " / " + nf(p.cell_min, 3) : "--"}</td><td>${isNum(p.temp) ? nf(p.temp, 1) + "°" : "--"}</td><td>${p.cycles ?? "--"}</td></tr>`).join("")}</table></div></div>`;
     }
     html += `<div class="card mt"><div class="plist">
-      <div class="prow"><span>Giới hạn sạc / xả (BMS)</span><b>${fA(b.charge_limit)} / ${fA(b.discharge_limit)}</b></div>
-      <div class="prow"><span>Tổng sạc / xả</span><b>${fK(b.total_charge)} / ${fK(b.total_discharge)}</b></div>
-      <div class="prow"><span>Cảnh báo / lỗi pin</span><b>${esc(viOpt(b.alarm) ?? "--")} / ${esc(viOpt(b.fault) ?? "--")}</b></div></div>
+      ${extra.map(([k, v]) => `<div class="prow"><span>${k}</span><b>${v}</b></div>`).join("")}</div>
+      ${bp.length ? `<details class="mt"><summary class="small muted" style="cursor:pointer">Tất cả thông số pin từ hãng (${bp.length})</summary><div class="plist">${bp.map((p) => `<div class="prow"><span>${esc(p.name)}</span><b>${esc(typeof p.value === "number" ? nf(p.value, 2) : p.value)}${p.uom ? " " + esc(p.uom) : ""}</b></div>`).join("")}</div></details>` : ""}
       ${!bms && !can ? `<p class="note mt">Muốn xem từng cell, khung CAN và cờ bảo vệ BMS: lắp gateway INSOLAR, nối CAN-H/CAN-L vào cổng BMS và (tuỳ chọn) RS485/Bluetooth của BMS.</p>` : ""}</div>`;
     el.innerHTML = html;
   };
