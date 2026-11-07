@@ -333,6 +333,32 @@ const CLOUD_MAP = [
 const str = (d, i) => { let x = d.pv.strings.find((s) => s.n === i); if (!x) { x = { n: i, v: null, a: null, w: null }; d.pv.strings.push(x); } return x; };
 const ph = (o, l) => { let x = o.phases.find((p) => p.l === l); if (!x) { x = { l, v: null, a: null, w: null }; o.phases.push(x); } return x; };
 
+// MỚI (07/11/2026): mỗi hãng/đời máy đặt tên thông số pin khác nhau (Solarman "SoH", "Temperature- Battery", "Total Charging Energy",
+// Deye "BMSSOH", "BMS Temp"…) → sau bảng CLOUD_MAP, dò tên linh hoạt cho các ô pin còn trống để trang Pin & BMS hiện đủ.
+function fillBattery(d) {
+  const b = d.battery, P = d.params.map((p) => ({ ...p, k: (p.name + " " + (p.key || "")).toLowerCase(), v: n(p.value) }));
+  const isBat = (k) => /batt|bms|\bbat\b|pin/.test(k);
+  const find = (test, numeric = true) => { const x = P.find((p) => test(p.k, p) && (!numeric || p.v !== null)); return x ? (numeric ? x.v : x.value) : null; };
+  const set = (f, v) => { if ((b[f] === null || b[f] === undefined) && v !== null && v !== undefined && v !== "") b[f] = v; };
+  set("soc", find((k) => /\bsoc\b|state of charge/.test(k) && !/low|min|max|limit|cut|shutdown|restart|back/.test(k)));
+  set("soh", find((k) => /soh\b|state of health/.test(k)));
+  set("temp", find((k, p) => /temp/.test(k) && isBat(k) && !/(max|min|high|low|protect|limit|mos)/.test(k) && (p.v > -40 && p.v < 120)));
+  set("voltage", find((k) => isBat(k) && /voltage/.test(k) && !/charg|limit|cell|max|min|rated|float|absorp|equal|over|under|shutdown|low|high/.test(k)));
+  set("current", find((k) => isBat(k) && /current/.test(k) && !/limit|max|charg|rated/.test(k)));
+  set("charge_limit", find((k) => /charg(e|ing)?[ _-]*current[ _-]*limit|max(imum)?[ _-]*charg(e|ing)?[ _-]*current/.test(k) && !/discharg/.test(k) && !/grid|gen/.test(k)));
+  set("discharge_limit", find((k) => /discharg(e|ing)?[ _-]*current[ _-]*limit|max(imum)?[ _-]*discharg(e|ing)?[ _-]*current/.test(k)));
+  set("total_charge", find((k) => /(total|cumulative|accumulated).*charg/.test(k) && !/discharg/.test(k)));
+  set("total_discharge", find((k) => /(total|cumulative|accumulated).*discharg/.test(k)));
+  set("today_charge", find((k) => /(daily|today).*charg/.test(k) && !/discharg/.test(k)));
+  set("today_discharge", find((k) => /(daily|today).*discharg/.test(k)));
+  set("capacity_ah", find((k, p) => isBat(k) && /capacity/.test(k) && /ah/i.test(p.uom || p.unit || k)));
+  set("capacity_kwh", find((k, p) => isBat(k) && /capacity|energy/.test(k) && /kwh/i.test(p.uom || "") && !/daily|today|total|cumulative/.test(k)));
+  set("cycles_total", find((k) => /cycle/.test(k)));
+  set("status", find((k) => isBat(k) && /status|state/.test(k) && !/soc|soh/.test(k), false));
+  set("alarm", find((k) => isBat(k) && /alarm|warning/.test(k), false));
+  set("fault", find((k) => isBat(k) && /fault|error/.test(k), false));
+}
+
 export function fromCloudList(list, source, extra = {}) {
   const d = emptyDetail();
   d.device = { profile: source, ...extra };
@@ -346,6 +372,7 @@ export function fromCloudList(list, source, extra = {}) {
     }
     d.params.push({ key: it.key || name, name, group: it.group || "Thông số", value: val, uom: it.unit || null });
   }
+  fillBattery(d);
   d.pv.strings.sort((a, b) => a.n - b.n);
   for (const s of d.pv.strings) if (s.w === null && s.v !== null && s.a !== null) s.w = Math.round(s.v * s.a);
   if (d.pv.power === null || d.pv.power === undefined) d.pv.power = d.pv.strings.length ? d.pv.strings.reduce((t, x) => t + (x.w || 0), 0) : null;
