@@ -82,6 +82,8 @@ async function ensureAlarms(env) {
   await env.DB.prepare("ALTER TABLE accounts ADD COLUMN alarm_note TEXT").run().catch(() => {}); // MỚI (07/11/2026): chẩn đoán đồng bộ cảnh báo
   // MỚI (07/11/2026): giá bán điện từng trạm (đ/kWh) để tính tiền khai thác; NULL = dùng giá mặc định 3.870 đ/kWh
   await env.DB.prepare("ALTER TABLE stations ADD COLUMN price_kwh REAL").run().catch(() => {});
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS field_maps (id INTEGER PRIMARY KEY AUTOINCREMENT, brand TEXT NOT NULL,
+    scope TEXT NOT NULL, scope_val TEXT, src TEXT NOT NULL, field TEXT NOT NULL, factor REAL, created_at TEXT DEFAULT (datetime('now')))`).run(); // MỚI (07/11/2026)
   alarmsReady = true;
 }
 const ALARM_MAX_STATIONS = 60; // giới hạn số trạm/lượt để không vượt số request của Worker
@@ -206,6 +208,15 @@ async function weatherFor(env, st) {
   }
 }
 
+// MỚI (07/11/2026): bảng gán thông số do người dùng tự đặt (theo trạm / dòng máy / cả hãng)
+async function fieldMaps(env, brand, stationId) {
+  const { results } = await env.DB.prepare(
+    `SELECT scope, scope_val, src, field, factor FROM field_maps WHERE brand=?1 AND (scope<>'station' OR scope_val=?2)
+     ORDER BY CASE scope WHEN 'station' THEN 0 WHEN 'model' THEN 1 ELSE 2 END, id DESC`
+  ).bind(brand, String(stationId)).all().catch(() => ({ results: [] }));
+  return results;
+}
+
 async function stationDetail(env, st, ctx) {
   if (st.gateway_id) {
     const r = await hub(env, st.gateway_id).fetch("https://hub/live");
@@ -224,7 +235,7 @@ async function stationDetail(env, st, ctx) {
     const creds = await decrypt(env.ENC_KEY, acc.creds_enc);
     const cached = acc.token_enc ? await decrypt(env.ENC_KEY, acc.token_enc).catch(() => null) : null;
     const r = await ad.fetchDetail(creds, cached, st.ext_id);
-    const d = fromCloudList(r.list, acc.brand, { serial: r.serial, manufacturer: ad.label, ...(r.device || {}) });
+    const d = fromCloudList(r.list, acc.brand, { serial: r.serial, manufacturer: ad.label, ...(r.device || {}) }, await fieldMaps(env, acc.brand, st.id));
     d.source = acc.brand;
     // MỚI (31/10/2026): cài đặt từ xa qua API điều khiển của cloud hãng (Deye Cloud, SolisCloud)
     if (r.settings?.length && ad.writeSetting) {
@@ -393,6 +404,36 @@ async function api(req, env, url, ctx) {
   if (ur) return ur;
   if (p === "/api/brands") return json(publicAdapterInfo());
   if (p === "/api/profiles") return json(profileList());
+
+  // ----- Gán thông số hãng → ô hiển thị (MỚI 07/11/2026) -----
+  if (p === "/api/field-maps" && method === "GET") {
+    const { results } = await env.DB.prepare("SELECT f.*, s.name AS station_name FROM field_maps f LEFT JOIN stations s ON f.scope='station' AND s.id=CAST(f.scope_val AS INTEGER) ORDER BY f.brand, f.id DESC").all();
+    return json(results);
+  }
+  if (p === "/api/field-maps" && method === "POST") {
+    const b = await req.json();
+    const st = await getStation(env, Number(b.station_id));
+    if (!st || st.gateway_id || !st.account_id) return json({ error: "Chỉ gán được cho trạm lấy dữ liệu từ cloud hãng" }, 400);
+    const scope = ["station", "model", "brand"].includes(b.scope) ? b.scope : "station";
+    const val = scope === "station" ? String(st.id) : scope === "model" ? String(b.model || "").slice(0, 80) : null;
+    if (scope === "model" && !val) return json({ error: "Không xác định được dòng máy" }, 400);
+    const src = String(b.src || "").trim().slice(0, 120), field = String(b.field || "").trim();
+    if (!src || !/^[a-z]+\.[a-z0-9_]+(\.[a-z_]+)?$/.test(field)) return json({ error: "Thiếu thông số hoặc ô cần gán" }, 400);
+    const factor = b.factor === "" || b.factor === null || b.factor === undefined ? null : Number(b.factor);
+    if (factor !== null && !Number.isFinite(factor)) return json({ error: "Hệ số không hợp lệ" }, 400);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM field_maps WHERE brand=?1 AND scope=?2 AND IFNULL(scope_val,'')=IFNULL(?3,'') AND field=?4").bind(st.brand, scope, val, field),
+      env.DB.prepare("INSERT INTO field_maps (brand, scope, scope_val, src, field, factor) VALUES (?1,?2,?3,?4,?5,?6)").bind(st.brand, scope, val, src, field, factor),
+      env.DB.prepare("UPDATE details SET updated_at='2000-01-01T00:00:00Z' WHERE station_id IN (SELECT id FROM stations WHERE brand=?1)").bind(st.brand), // đọc lại ngay
+    ]);
+    return json({ ok: true });
+  }
+  m = p.match(/^\/api\/field-maps\/(\d+)$/);
+  if (m && method === "DELETE") {
+    const r = await env.DB.prepare("DELETE FROM field_maps WHERE id=?1 RETURNING brand").bind(Number(m[1])).first();
+    if (r) await env.DB.prepare("UPDATE details SET updated_at='2000-01-01T00:00:00Z' WHERE station_id IN (SELECT id FROM stations WHERE brand=?1)").bind(r.brand).run();
+    return json({ ok: true });
+  }
 
   if (p === "/api/stations" && method === "GET") {
     const { results } = await env.DB.prepare(

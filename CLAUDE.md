@@ -47,6 +47,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 7. **Tiền khai thác (07/11/2026):** mỗi trạm có `stations.price_kwh` (đ/kWh, trống = 3.870); thẻ "Tiền khai thác" ở Tổng quan (hôm nay / tháng / năm / tổng = sản lượng PV × giá; tháng/năm cộng từ `readings` qua `energySum`). Bấm nhãn giá để sửa.
 8. **Tìm kiếm danh sách trạm (07/11/2026):** ô tìm nằm ngoài vùng vẽ lại, chờ 150 ms, bỏ qua lúc bộ gõ đang ghép dấu, tìm không dấu (`fold`), hiện 40 trạm đầu + "Xem thêm".
 
+9. **Gán thông số (07/11/2026):** mỗi hãng/dòng/đời máy đặt tên khác nhau → (a) `fillBattery` trong `canonical.js` tự dò tên pin linh hoạt; (b) người dùng bấm vào thông số (tab Biến tần hoặc "Tất cả thông số pin từ hãng") → chọn ô hiển thị + phạm vi (trạm / dòng máy `device.model_key` / cả hãng) + hệ số nhân. Lưu bảng `field_maps` (tự tạo trong `ensureAlarms`), áp dụng trong `fromCloudList(…, maps)` qua `applyMaps` (ghi đè tự dò; trạm > dòng máy > hãng). API `/api/field-maps` (GET/POST/DELETE). Chỉ cho trạm cloud (gateway dùng profile thanh ghi).
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.

@@ -1544,13 +1544,71 @@ async function viewBattery() {
     html += `<div class="card mt"><div class="plist">
       ${extra.map(([k, v]) => `<div class="prow"><span>${k}</span><b>${v}</b></div>`).join("")}</div>
       <h3 class="mt" style="font-size:14px">Tất cả thông số pin từ hãng <span class="tag">${bp.length}</span></h3>
-      ${bp.length ? `<div class="plist">${bp.map((p) => `<div class="prow"><span>${esc(p.name)}</span><b>${esc(typeof p.value === "number" ? nf(p.value, 2) : p.value)}${p.uom ? " " + esc(p.uom) : ""}</b></div>`).join("")}</div>` : `<p class="small muted" style="margin:0">Hãng không gửi thêm thông số pin nào.</p>`}
+      ${canMap() ? `<p class="small muted" style="margin:0 0 6px">Ô trên còn thiếu/sai? Bấm vào thông số để gán vào đúng ô. Không thấy ở đây thì tìm trong tab Biến tần.</p>` : ""}
+      ${bp.length ? `<div class="plist">${bp.map((p) => `<div class="prow" data-src="${esc(p.key || p.name)}"><span>${esc(p.name)}</span><b>${esc(typeof p.value === "number" ? nf(p.value, 2) : p.value)}${p.uom ? " " + esc(p.uom) : ""}</b></div>`).join("")}</div>` : `<p class="small muted" style="margin:0">Hãng không gửi thêm thông số pin nào.</p>`}
       ${!bms && !can ? `<p class="note mt">Muốn xem từng cell, khung CAN và cờ bảo vệ BMS: lắp gateway INSOLAR, nối CAN-H/CAN-L vào cổng BMS và (tuỳ chọn) RS485/Bluetooth của BMS.</p>` : ""}</div>`;
     el.innerHTML = html;
+    bindMapRows(el);
   };
   if (!S.detail) { try { await loadDetail(); } catch (e) { $("#sv").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; } }
   draw();
   liveRefresh(draw, refreshMs());
+}
+
+// ================= Gán thông số hãng → ô hiển thị (MỚI 07/11/2026) =================
+// Mỗi hãng / dòng máy / đời máy đặt tên thông số khác nhau → người dùng bấm vào thông số để chỉ định nó là ô nào.
+const MAP_FIELDS = (() => {
+  const L = [];
+  const g = (grp, arr) => arr.forEach(([k, t]) => L.push([grp, k, t]));
+  g("Pin lưu trữ", [["battery.soc", "SOC (%)"], ["battery.soh", "SOH (%)"], ["battery.temp", "Nhiệt độ pin"], ["battery.voltage", "Điện áp pin"], ["battery.current", "Dòng pin"],
+    ["battery.power", "Công suất pin"], ["battery.today_charge", "Sạc hôm nay"], ["battery.today_discharge", "Xả hôm nay"], ["battery.total_charge", "Tổng sạc"], ["battery.total_discharge", "Tổng xả"],
+    ["battery.charge_limit", "Giới hạn dòng sạc (BMS)"], ["battery.discharge_limit", "Giới hạn dòng xả (BMS)"], ["battery.capacity_ah", "Dung lượng (Ah)"], ["battery.capacity_kwh", "Dung lượng (kWh)"],
+    ["battery.cycles_total", "Số chu kỳ"], ["battery.status", "Trạng thái pin"], ["battery.alarm", "Cảnh báo pin"], ["battery.fault", "Lỗi pin"]]);
+  g("Mái pin PV", [["pv.power", "Công suất PV"], ["pv.today_kwh", "Sản lượng hôm nay"], ["pv.total_kwh", "Tổng sản lượng"]]);
+  for (let i = 1; i <= 4; i++) g("Mái pin PV", [[`pv.s${i}.v`, `PV${i} điện áp`], [`pv.s${i}.a`, `PV${i} dòng`], [`pv.s${i}.w`, `PV${i} công suất`]]);
+  g("Điện lưới", [["grid.power", "Công suất lưới (+ mua)"], ["grid.freq", "Tần số lưới"], ["grid.today_import", "Mua hôm nay"], ["grid.today_export", "Bán hôm nay"], ["grid.total_import", "Tổng mua"], ["grid.total_export", "Tổng bán"]]);
+  for (let i = 1; i <= 3; i++) g("Điện lưới", [[`grid.p${i}.v`, `L${i} điện áp`], [`grid.p${i}.a`, `L${i} dòng`], [`grid.p${i}.w`, `L${i} công suất`]]);
+  g("Tải nhà", [["load.power", "Công suất tải"], ["load.today_kwh", "Tiêu thụ hôm nay"], ["load.total_kwh", "Tổng tiêu thụ"], ["load.ups_power", "Tải dự phòng UPS/EPS"]]);
+  for (let i = 1; i <= 3; i++) g("Tải nhà", [[`load.p${i}.v`, `L${i} điện áp`], [`load.p${i}.a`, `L${i} dòng`], [`load.p${i}.w`, `L${i} công suất`]]);
+  g("Biến tần", [["output.power", "Công suất đầu ra"], ["output.freq", "Tần số đầu ra"], ["device.temp_dc", "Nhiệt độ DC / tản nhiệt"], ["device.temp_ac", "Nhiệt độ AC"],
+    ["device.state", "Trạng thái"], ["device.alarm", "Cảnh báo"], ["device.fault", "Lỗi"], ["device.rated_power", "Công suất định mức"]]);
+  return L;
+})();
+const canMap = () => !SHARE && S.st && !S.st.gateway_id && S.st.account_id;
+function bindMapRows(root) {
+  if (!canMap()) return;
+  root.querySelectorAll("[data-src]").forEach((r) => { r.style.cursor = "pointer"; r.onclick = () => mapSheet(r.dataset.src); });
+}
+async function mapSheet(src) {
+  const d = S.detail, p = (d.params || []).find((x) => String(x.key || x.name) === src || x.name === src) || { name: src };
+  const model = d.device?.model_key, brand = BRAND[S.st.brand] || S.st.brand;
+  let maps = [];
+  try { maps = (await api("/api/field-maps")).filter((m) => m.brand === S.st.brand); } catch {}
+  const cur = maps.find((m) => m.src.toLowerCase() === String(p.name).toLowerCase() || m.src.toLowerCase() === String(p.key || "").toLowerCase());
+  const groups = [...new Set(MAP_FIELDS.map((f) => f[0]))];
+  const lbl = (k) => { const f = MAP_FIELDS.find((x) => x[1] === k); return f ? f[0] + " · " + f[2] : k; };
+  const scopeTxt = (m) => (m.scope === "station" ? "trạm " + (m.station_name || m.scope_val) : m.scope === "model" ? "dòng " + m.scope_val : "mọi trạm " + brand);
+  openSheet(`<h2>Gán thông số</h2>
+    <p class="small" style="margin:0 0 8px"><b>${esc(p.name)}</b>${p.key && p.key !== p.name ? ` <span class="muted">(${esc(p.key)})</span>` : ""} = <b>${esc(p.value ?? "--")}${p.uom ? " " + esc(p.uom) : ""}</b></p>
+    <div class="field"><label for="m_f">Hiển thị vào ô</label><select class="inp" id="m_f"><option value="">— chọn —</option>
+      ${groups.map((g) => `<optgroup label="${g}">${MAP_FIELDS.filter((f) => f[0] === g).map((f) => `<option value="${f[1]}" ${cur?.field === f[1] ? "selected" : ""}>${f[2]}</option>`).join("")}</optgroup>`).join("")}</select></div>
+    <div class="field"><label for="m_s">Áp dụng cho</label><select class="inp" id="m_s">
+      <option value="station">Chỉ trạm này</option>
+      ${model ? `<option value="model" selected>Mọi trạm dòng máy ${esc(model)}</option>` : ""}
+      <option value="brand" ${model ? "" : "selected"}>Mọi trạm ${esc(brand)}</option></select></div>
+    <div class="field"><label for="m_k">Hệ số nhân (tuỳ chọn)</label><input class="inp" id="m_k" inputmode="decimal" placeholder="1 — vd 0.1 nếu hãng trả 275 cho 27,5°C; -1 để đảo dấu" value="${esc(cur?.factor ?? "")}"></div>
+    <p class="small" id="m_e" style="color:var(--danger)"></p>
+    <div class="row2"><button class="btn" id="m_x">Đóng</button><button class="btn pri" id="m_ok">Lưu</button></div>
+    ${maps.length ? `<h3 class="mt" style="font-size:14px">Đã gán cho ${esc(brand)} (${maps.length})</h3><div class="plist">${maps.map((m) => `<div class="prow"><span>${esc(m.src)} → ${esc(lbl(m.field))}${m.factor ? " ×" + m.factor : ""}<br><small class="muted">${esc(scopeTxt(m))}</small></span><b><button class="btn" data-del="${m.id}" style="padding:4px 10px">Xoá</button></b></div>`).join("")}</div>` : ""}`);
+  $("#m_x").onclick = closeSheet;
+  const done = async () => { closeSheet(); toast("Đã lưu — đang đọc lại dữ liệu"); try { await loadDetail(); } catch {} render(); };
+  $("#m_ok").onclick = async () => {
+    const field = $("#m_f").value;
+    if (!field) return ($("#m_e").textContent = "Chọn ô cần hiển thị");
+    try { await api("/api/field-maps", { method: "POST", body: JSON.stringify({ station_id: S.st.id, src: p.key || p.name, field, scope: $("#m_s").value, model, factor: $("#m_k").value.trim().replace(",", ".") }) }); await done(); }
+    catch (e) { $("#m_e").textContent = e.message; }
+  };
+  document.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { try { await api("/api/field-maps/" + b.dataset.del, { method: "DELETE" }); await done(); } catch (e) { toast(e.message); } }));
 }
 
 // ================= Biến tần =================
@@ -1592,9 +1650,10 @@ async function viewInverter() {
       ${ph("Lưới điện", d.grid.phases, `<div class="plist mt"><div class="prow"><span>Tần số lưới</span><b>${isNum(d.grid.freq) ? nf(d.grid.freq, 2) + " Hz" : "--"}</b></div>${isNum(d.grid.pf) && d.grid.pf ? `<div class="prow"><span>Hệ số công suất</span><b>${nf(d.grid.pf, 3)}</b></div>` : ""}<div class="prow"><span>Tổng công suất lưới</span><b class="cw">${fW(d.grid.power)}</b></div></div>`)}
       ${ph("Đầu ra inverter", d.output.phases, `<div class="plist mt"><div class="prow"><span>Tần số đầu ra</span><b>${isNum(d.output.freq) ? nf(d.output.freq, 2) + " Hz" : "--"}</b></div><div class="prow"><span>Công suất inverter</span><b class="cw">${fW(d.output.power)}</b></div></div>`)}
       ${ph("Tải", d.load.phases)}
+      ${canMap() ? `<p class="small muted mt" style="margin-bottom:0">Ô nào hiện sai hoặc trống: bấm vào thông số bên dưới để gán nó vào đúng ô (áp dụng cho trạm, dòng máy hoặc cả hãng).</p>` : ""}
       <div class="search mt"><input id="iq" placeholder="Tìm thông số…" value="${esc(S.invQ)}" aria-label="Tìm thông số"></div>
       ${Object.entries(groups).map(([g, list]) => `<details class="grp" ${q ? "open" : ""}><summary>${esc(viGroup(g))}<span class="tag">${list.length}</span></summary><div class="in plist">
-        ${list.map((p) => `<div class="prow"><span>${esc(vi(p.name))}</span><b>${fmtVal(p)}</b></div>`).join("")}</div></details>`).join("")}
+        ${list.map((p) => `<div class="prow" data-src="${esc(p.key || p.name)}"><span>${esc(vi(p.name))}</span><b>${fmtVal(p)}</b></div>`).join("")}</div></details>`).join("")}
       ${S.st?.gateway_id && !SHARE ? `<details class="grp"><summary>Công cụ Modbus (nâng cao)</summary><div class="in">
         <p class="small muted" style="margin-top:0">Đọc trực tiếp thanh ghi qua gateway. Ghi thanh ghi thô có thể làm hỏng cấu hình — chỉ dùng khi biết rõ.</p>
         <div class="row2"><div class="field"><label for="mfc">Hàm</label><select class="inp" id="mfc"><option value="3">03 Holding</option><option value="4">04 Input</option></select></div>
@@ -1603,6 +1662,7 @@ async function viewInverter() {
         <div class="field"><label for="mval">Giá trị ghi (cách nhau dấu phẩy)</label><input class="inp" id="mval" placeholder="vd 100"></div></div>
         <div class="row2 mt"><button class="btn" id="mread">Đọc</button><button class="btn dan" id="mwrite">Ghi…</button></div>
         <pre id="mout" class="small" style="white-space:pre-wrap;background:var(--card2);border-radius:12px;padding:10px;margin-top:10px;min-height:40px"></pre></div></details>` : ""}`;
+    bindMapRows(el);
     const iq = $("#iq");
     let ic = false; // SỬA (07/11/2026): bỏ qua lúc bộ gõ tiếng Việt đang ghép dấu
     iq.addEventListener("compositionstart", () => (ic = true));

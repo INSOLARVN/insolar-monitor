@@ -359,7 +359,40 @@ function fillBattery(d) {
   set("fault", find((k) => isBat(k) && /fault|error/.test(k), false));
 }
 
-export function fromCloudList(list, source, extra = {}) {
+// MỚI (07/11/2026): người dùng tự gán "thông số của hãng → ô hiển thị" (mỗi hãng/dòng/đời máy đặt tên khác nhau).
+// maps: [{ src, field, factor }] đã lọc theo trạm/dòng máy/hãng, ưu tiên phần tử đứng trước. Gán của người dùng ghi ĐÈ tự dò.
+// field: "battery.soh", "pv.s1.v" (chuỗi PV1), "grid.p2.a" (pha L2), "load.p1.w", "output.p3.v"…
+export function setField(d, field, v) {
+  const [a, b, c] = String(field).split(".");
+  if (!d[a] || !b) return;
+  if (a === "pv" && /^s\d+$/.test(b) && c) { str(d, +b.slice(1))[c] = v; return; }
+  if (/^p\d$/.test(b) && c && d[a].phases) { ph(d[a], +b.slice(1))[c] = v; return; }
+  d[a][b] = v;
+}
+export function applyMaps(d, maps) {
+  if (!maps?.length) return;
+  const by = new Map();
+  for (const p of d.params) { by.set(String(p.name).toLowerCase(), p); if (p.key) by.set(String(p.key).toLowerCase(), p); }
+  const done = new Set();
+  for (const m of maps) {
+    if (done.has(m.field)) continue; // trạm > dòng máy > hãng
+    const p = by.get(String(m.src).toLowerCase());
+    if (!p) continue;
+    const num = n(p.value);
+    setField(d, m.field, num === null ? p.value : Math.round(num * (Number(m.factor) || 1) * 1000) / 1000);
+    done.add(m.field);
+  }
+  d.mapped = [...done];
+}
+// Tên dòng máy (để gán theo dòng máy): ưu tiên thông tin thiết bị, rồi thông số "Model/Device Type…"
+export function modelOf(d) {
+  const dv = d.device || {};
+  let m = dv.model || dv.type || dv.product_model;
+  if (!m) { const p = d.params.find((x) => /^(device |inverter |machine |product )?(type|model)( name)?$/i.test(String(x.name)) && x.value !== null && x.value !== ""); m = p?.value; }
+  return m ? String(m).trim().slice(0, 80) : null;
+}
+
+export function fromCloudList(list, source, extra = {}, maps = null) {
   const d = emptyDetail();
   d.device = { profile: source, ...extra };
   for (const it of list || []) {
@@ -373,6 +406,8 @@ export function fromCloudList(list, source, extra = {}) {
     d.params.push({ key: it.key || name, name, group: it.group || "Thông số", value: val, uom: it.unit || null });
   }
   fillBattery(d);
+  d.device.model_key = modelOf(d);
+  if (maps) applyMaps(d, maps.filter((m) => m.scope !== "model" || m.scope_val === d.device.model_key));
   d.pv.strings.sort((a, b) => a.n - b.n);
   for (const s of d.pv.strings) if (s.w === null && s.v !== null && s.a !== null) s.w = Math.round(s.v * s.a);
   if (d.pv.power === null || d.pv.power === undefined) d.pv.power = d.pv.strings.length ? d.pv.strings.reduce((t, x) => t + (x.w || 0), 0) : null;
