@@ -36,7 +36,7 @@ async function post(creds, token, path, body) {
 
 export default {
   brand: "solarman",
-  label: "Solarman (Deye, SRNE, Sofar… gắn logger Solarman)",
+  label: "Solarman OpenAPI (trả phí — cần App ID)",
   fields: [
     { key: "app_id", label: "App ID" },
     { key: "app_secret", label: "App Secret", type: "password" },
@@ -45,7 +45,7 @@ export default {
     { key: "org_id", label: "Org ID (chỉ khi dùng Solarman Business)", optional: true },
     { key: "api_url", label: "API URL", placeholder: "https://globalapi.solarmanpv.com", optional: true },
   ],
-  help: "Gửi email tới service@solarmanpv.com xin quyền OpenAPI (nêu là doanh nghiệp, tài khoản Solarman Business) để nhận App ID + App Secret.",
+  help: "OpenAPI Solarman là dịch vụ trả phí. Không có App ID thì chọn \"Solarman Smart (đăng nhập app)\". Gửi email tới service@solarmanpv.com xin quyền OpenAPI (nêu là doanh nghiệp, tài khoản Solarman Business) để nhận App ID + App Secret.",
 
   async fetchStations(creds, cached) {
     const { token, fresh } = await getToken(creds, cached);
