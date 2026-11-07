@@ -62,7 +62,8 @@ async function syncAccount(env, acc, opt = {}) {
     return { ok: true, count: stations.length, alarms };
   } catch (e) {
     const msg = String(e.message || e).slice(0, 300);
-    await env.DB.prepare("UPDATE accounts SET last_sync=?2, last_error=?3, token_enc=NULL WHERE id=?1").bind(acc.id, now, msg).run();
+    // SỬA (07/11/2026): adapter giữ refresh token trong token_enc (Solarman Business) thì không xoá khi lỗi tạm thời
+    await env.DB.prepare(`UPDATE accounts SET last_sync=?2, last_error=?3${adapter.keepToken ? "" : ", token_enc=NULL"} WHERE id=?1`).bind(acc.id, now, msg).run();
     return { ok: false, error: msg };
   }
 }

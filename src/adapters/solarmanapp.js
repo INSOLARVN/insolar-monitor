@@ -2,6 +2,9 @@
 // Lý do: OpenAPI của Solarman (App ID/App Secret) là dịch vụ trả phí → dùng chính API mà app/web dùng,
 // chỉ cần email + mật khẩu Solarman. API không công khai, Solarman có thể đổi bất cứ lúc nào.
 // Nếu web bắt captcha khi đăng nhập: dán "Token" lấy từ trình duyệt (xem help) — token sống ~60 ngày.
+// MỚI (07/11/2026): thêm Solarman Business (globalpro.solarmanpv.com) — đăng nhập web bắt captcha Cloudflare nên dùng
+// refresh token lấy từ cookie trình duyệt (sống ~6 tháng): /oauth2-s/oauth/token grant_type=refresh_token → access token ~24h.
+// Refresh token mới (nếu Solarman đổi) được lưu trong token_enc (adapter đặt keepToken để lỗi tạm thời không xoá mất).
 import { sha256Hex } from "../crypto.js";
 import { fetchJson, station, num, isoFromAny, statusFromTime, alarm } from "./util.js";
 
@@ -15,6 +18,72 @@ function jwtExp(t) {
     const p = JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
     return p.exp ? p.exp * 1000 : null;
   } catch { return null; }
+}
+
+function jwtBody(t) {
+  try { return JSON.parse(atob(String(t).split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return null; }
+}
+// Tách access token / refresh token từ chuỗi người dùng dán (cookie, JSON localStorage hoặc từng token).
+// Refresh token của Spring OAuth có trường "ati" trong thân JWT.
+export function pickTokens(...texts) {
+  const out = { access: null, refresh: null };
+  for (const t of texts) {
+    for (const j of String(t || "").match(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g) || []) {
+      const b = jwtBody(j);
+      if (!b) continue;
+      if (b.ati) { if (!out.refresh || (b.exp || 0) > (jwtBody(out.refresh)?.exp || 0)) out.refresh = j; }
+      else if (!out.access || (b.exp || 0) > (jwtBody(out.access)?.exp || 0)) out.access = j;
+    }
+  }
+  return out;
+}
+
+const BIZ_HOST = "https://globalpro.solarmanpv.com";
+const BIZ_HEAD = { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json, text/plain, */*", "User-Agent": UA, "log-platform-code": "SOLARMAN_BUSINESS", "log-channel": "Web", "log-lan": "en" };
+
+// Đổi refresh token lấy access token mới (không cần captcha)
+async function bizRefresh(host, refresh) {
+  let last = "";
+  for (const path of ["/oauth2-s/oauth/token", "/oauth-s/oauth/token"]) {
+    try {
+      const r = await fetchJson(`${host}${path}`, { method: "POST", headers: BIZ_HEAD, body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh, client_id: "test" }).toString() });
+      if (r.access_token) return r;
+      last = r.error_description || r.msg || r.error || JSON.stringify(r).slice(0, 150);
+    } catch (e) { last = String(e.message || e); }
+  }
+  throw new Error(`Solarman Business: không gia hạn được token (${last}). Đăng nhập lại pro.solarmanpv.com rồi dán cookie mới.`);
+}
+
+// Token Business phải gắn tổ chức (organizationId); nếu chưa có mà người dùng nhập Org ID thì đổi sang tổ chức đó
+async function bizSwitchOrg(host, access, orgId) {
+  const b = jwtBody(access) || {};
+  if (!orgId || Number(b.organizationId || b.orgId || 0) === Number(orgId)) return null;
+  const r = await fetchJson(`${host}/oauth2-s/oauth/token`, { method: "POST", headers: { ...BIZ_HEAD, Authorization: `Bearer ${access}` }, body: new URLSearchParams({ grant_type: "switch_org", access_token: access, client_id: "test", org_id: String(orgId), system: "SOLARMAN" }).toString() });
+  return r.access_token ? r : null;
+}
+
+async function bizSession(creds, cached, force = false) {
+  const host = clean(creds.api_url) || BIZ_HOST;
+  const src = String(creds.cookie || "") + " " + String(creds.refresh_token || "") + " " + String(creds.token || "");
+  // Người dùng dán cookie mới → bỏ token cũ trong bộ đệm
+  const fresh = !cached || cached.src !== src.length + ":" + src.slice(-24);
+  if (!force && !fresh && cached?.token && (cached.exp || 0) > Date.now() + 300e3) return { s: cached, fresh: null };
+  const given = pickTokens(src);
+  let refresh = (!fresh && cached?.refresh) || given.refresh;
+  let access = null, exp = 0;
+  if (!force && given.access && fresh && (jwtExp(given.access) || 0) > Date.now() + 300e3) { access = given.access; exp = jwtExp(given.access); }
+  if (!access) {
+    if (!refresh) throw new Error("Solarman Business: chưa có refresh token (hoặc token đã hết hạn). Xem hướng dẫn lấy cookie.");
+    const r = await bizRefresh(host, refresh);
+    access = r.access_token; refresh = r.refresh_token || refresh;
+    exp = Date.now() + (num(r.expires_in) || 86400) * 1000;
+  }
+  try {
+    const sw = await bizSwitchOrg(host, access, creds.org_id);
+    if (sw) { access = sw.access_token; refresh = sw.refresh_token || refresh; exp = Date.now() + (num(sw.expires_in) || 86400) * 1000; }
+  } catch {}
+  const s = { token: access, host, exp, refresh, src: src.length + ":" + src.slice(-24), biz: 1 };
+  return { s, fresh: s };
 }
 
 async function login(creds) {
@@ -74,7 +143,15 @@ async function call(s, method, path, body) {
 }
 
 // Gọi API; token hết hạn (401) thì đăng nhập lại 1 lần
-async function withSession(creds, cached, fn) {
+async function withSession(creds, cached, fn, biz = false) {
+  if (biz) {
+    let { s, fresh } = await bizSession(creds, cached);
+    try { return { out: await fn(s), fresh }; } catch (e) {
+      if (!/HTTP 401|HTTP 403|invalid_token|unauthorized/i.test(String(e.message))) throw e;
+      ({ s } = await bizSession(creds, s, true)); // access token hết hạn sớm → gia hạn bằng refresh token rồi thử lại 1 lần
+      return { out: await fn(s), fresh: s };
+    }
+  }
   let { s, fresh } = await session(creds, cached);
   try {
     return { out: await fn(s), fresh };
@@ -99,10 +176,33 @@ async function inverters(s, stationId) {
   if (!list.length) {
     try { list = arr(await call(s, "POST", `/maintain-s/operating/device/search?page=1&size=20`, { stationId: Number(stationId), deviceType: "INVERTER" })); } catch {}
   }
+  if (!list.length) {
+    try { list = arr(await call(s, "GET", `/maintain-s/operating/system/device/INVERTER/list?siteId=${stationId}&size=20&order.direction=ASC&order.property=name`)); } catch {}
+  }
   return list.filter((x) => !x.deviceType || /INVERTER/i.test(x.deviceType));
 }
+// Thử lần lượt các đường dẫn (bản Smart và bản Business khác nhau đôi chút)
+async function first(s, paths) {
+  let err;
+  for (const p of paths) { try { return await call(s, "GET", p); } catch (e) { err = e; } }
+  throw err;
+}
+const REALTIME_MAX = 40; // số trạm lấy luồng năng lượng chi tiết mỗi lượt (giới hạn request của Worker)
 
-export default {
+function make(biz) {
+  const W = (creds, cached, fn) => withSession(creds, cached, fn, biz);
+  return {
+  ...(biz ? {
+  brand: "solarman_biz",
+  label: "Solarman Business (không cần API)",
+  keepToken: true,
+  fields: [
+    { key: "cookie", label: "Dán cookie đăng nhập pro.solarmanpv.com", type: "password" },
+    { key: "org_id", label: "Org ID (chỉ khi có nhiều công ty)", optional: true },
+    { key: "api_url", label: "Máy chủ", placeholder: BIZ_HOST, optional: true },
+  ],
+  help: "Solarman Business bắt captcha khi đăng nhập nên không tự đăng nhập được. Cách lấy cookie (1 lần, dùng ~6 tháng, app tự gia hạn): mở máy tính → đăng nhập pro.solarmanpv.com bằng Chrome → bấm F12 → tab Console → gõ copy(document.cookie) rồi Enter → quay lại đây dán (Ctrl+V) vào ô cookie. Nếu báo không có refresh token: F12 → Application → Cookies → chép 2 giá trị dài bắt đầu bằng eyJ dán vào, cách nhau dấu cách.",
+  } : {
   brand: "solarman_app",
   label: "Solarman Smart (đăng nhập app, không cần API)",
   fields: [
@@ -112,26 +212,29 @@ export default {
     { key: "api_url", label: "Máy chủ", placeholder: "https://globalhome.solarmanpv.com", optional: true },
   ],
   help: "Không cần mua API: dùng đúng email + mật khẩu app Solarman Smart. Nếu báo captcha: đăng nhập home.solarmanpv.com trên máy tính → F12 → Application → Cookies/Local Storage → chép giá trị token (chuỗi dài bắt đầu bằng eyJ) dán vào ô Token. Dữ liệu cập nhật 5 phút/lần, chỉ xem — chưa cài đặt từ xa.",
+  }),
 
   async fetchStations(creds, cached) {
-    const { out, fresh } = await withSession(creds, cached, async (s) => {
+    const { out, fresh } = await W(creds, cached, async (s) => {
       const list = [];
       for (let page = 1; page <= 20; page++) {
-        const r = await call(s, "POST", `/maintain-s/operating/station/search?page=${page}&size=50&order.direction=ASC&order.property=name`, {
-          region: { nationId: null, level1: null, level2: null, level3: null, level4: null, level5: null },
-        });
+        const r = biz
+          ? await call(s, "POST", `/maintain-s/operating/station/v2/search?page=${page}&size=50&order.direction=ASC&order.property=name`, { station: { powerTypeList: ["PV"] } })
+          : await call(s, "POST", `/maintain-s/operating/station/search?page=${page}&size=50&order.direction=ASC&order.property=name`, {
+            region: { nationId: null, level1: null, level2: null, level3: null, level4: null, level5: null },
+          });
         const items = arr(r).map((x) => x.station ? { ...x.station, ...x } : x);
         list.push(...items);
         if (items.length < 50 || (num(r.total) && list.length >= num(r.total))) break;
       }
       const stations = [];
-      for (const it of list) {
+      for (const [i, it] of list.entries()) {
         let f = {};
-        try { f = await call(s, "GET", `/maintain-s/fast/system/${it.id}`); } catch {}
+        if (i < REALTIME_MAX) { try { f = await call(s, "GET", `/maintain-s/fast/system/${it.id}`); } catch {} }
         const t = isoFromAny(f.lastUpdateTime || it.lastUpdateTime);
         const net = String(f.networkStatus || it.networkStatus || "").toUpperCase();
         let status = net === "ALL_OFFLINE" ? "offline" : statusFromTime(t);
-        if (num(it.warningStatus) > 0 || /ALARM|FAULT/.test(net)) status = "alarm";
+        if (num(it.warningStatus) > 0 || /ALARM|FAULT/.test(net) || /ALERT|FAULT|WARN/i.test(String(it.businessWarningStatus || ""))) status = "alarm";
         stations.push(station({
           ext_id: it.id,
           name: it.name,
@@ -141,8 +244,8 @@ export default {
           status,
           pv_power_w: f.generationPower ?? it.generationPower,
           load_power_w: f.usePower ?? it.usePower,
-          grid_power_w: gridW(f),
-          battery_power_w: batW(f),
+          grid_power_w: gridW(f) ?? gridW(it),
+          battery_power_w: batW(f) ?? batW(it),
           battery_soc: f.batterySoc ?? it.batterySoc,
           today_kwh: f.generationValue ?? it.generationValue,
           total_kwh: f.generationTotal ?? it.generationTotal,
@@ -156,7 +259,7 @@ export default {
 
   // Toàn bộ thông số inverter giống trang thiết bị trên web Solarman (PV1..4, lưới/tải từng pha, pin, BMS, nhiệt…)
   async fetchDetail(creds, cached, stationId) {
-    const { out, fresh } = await withSession(creds, cached, async (s) => {
+    const { out, fresh } = await W(creds, cached, async (s) => {
       const inv = (await inverters(s, stationId))[0];
       if (!inv) throw new Error("Trạm chưa có inverter trên Solarman");
       const deviceId = num(inv.deviceId ?? inv.id);
@@ -177,17 +280,17 @@ export default {
   // Lịch sử lấy thẳng từ Solarman: ngày (5 phút/điểm), tháng (từng ngày), năm (từng tháng)
   async fetchHistory(creds, cached, stationId, range, date) {
     const { y, m, d } = ymd(date);
-    const { out, fresh } = await withSession(creds, cached, async (s) => {
+    const { out, fresh } = await W(creds, cached, async (s) => {
       const bar = (it, label, day) => ({ label, day, pv: num(it.generationValue), load: num(it.useValue), imp: num(it.buyValue), exp: num(it.gridValue), chg: num(it.chargeValue), dis: num(it.dischargeValue) });
       if (range === "month") {
-        const r = await call(s, "GET", `/maintain-s/history/batteryPower/${stationId}/stats/month?year=${y}&month=${m}`);
+        const r = await first(s, [`/maintain-s/history/batteryPower/${stationId}/stats/month?year=${y}&month=${m}`, `/maintain-s/history/power/${stationId}/stats/month?year=${y}&month=${m}`]);
         return { bars: (r.records || []).map((it, i) => { const dd = it.day || i + 1; const day = `${y}-${String(m).padStart(2, "0")}-${String(dd).padStart(2, "0")}`; return bar(it, day.slice(8), day); }) };
       }
       if (range === "year") {
-        const r = await call(s, "GET", `/maintain-s/history/batteryPower/${stationId}/stats/year?year=${y}`);
+        const r = await first(s, [`/maintain-s/history/batteryPower/${stationId}/stats/year?year=${y}`, `/maintain-s/history/power/${stationId}/stats/year?year=${y}`]);
         return { bars: (r.records || []).map((it, i) => bar(it, String(it.month || i + 1).padStart(2, "0"))) };
       }
-      const r = await call(s, "GET", `/maintain-s/history/batteryPower/${stationId}/stats/daily?year=${y}&month=${m}&day=${d}`);
+      const r = await first(s, [`/maintain-s/history/batteryPower/${stationId}/stats/daily?year=${y}&month=${m}&day=${d}`, `/maintain-s/history/power/${stationId}/record?year=${y}&month=${m}&day=${d}`]);
       const points = (r.records || []).map((it) => ({
         ts: isoFromAny(it.dateTime), pv: num(it.generationPower), load: num(it.usePower),
         grid: gridW(it), bat: batW(it), soc: num(it.batterySoc), today_kwh: null,
@@ -199,7 +302,7 @@ export default {
 
   // MỚI (07/11/2026): cảnh báo giống mục "Cảnh báo" trên web Solarman — POST /maintain-s/operating/alert/search theo trạm
   async fetchAlarms(creds, cached, stationIds) {
-    const { out, fresh } = await withSession(creds, cached, async (s) => {
+    const { out, fresh } = await W(creds, cached, async (s) => {
       const res = [];
       const since = Date.now() - 7 * 86400e3;
       for (const id of stationIds) {
@@ -223,4 +326,8 @@ export default {
     });
     return { alarms: out, token: fresh };
   },
-};
+  };
+}
+
+export default make(false);
+export const solarmanBiz = make(true);
