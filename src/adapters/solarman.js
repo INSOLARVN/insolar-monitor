@@ -2,7 +2,7 @@
 // Deye, SRNE, Sofar, Afore, Kstar, Sunsynk... (xem trong app Solarman Smart / Business)
 // appId + appSecret: email service@solarmanpv.com để xin quyền OpenAPI
 import { sha256Hex } from "../crypto.js";
-import { fetchJson, station, num, isoFromAny, vnDate, statusFromTime } from "./util.js";
+import { fetchJson, station, num, isoFromAny, vnDate, statusFromTime, alarm } from "./util.js";
 
 const base = (c) => (c.api_url || "https://globalapi.solarmanpv.com").replace(/\/$/, "");
 
@@ -101,5 +101,27 @@ export default {
     if (bmsDev) { try { bms = await post(creds, token, "/device/v1.0/currentData", { deviceSn: bmsDev.deviceSn }); } catch {} }
     const list = [...(cur.dataList || []), ...((bms?.dataList || []).map((x) => ({ ...x, group: "BMS" })))];
     return { list, serial: inv.deviceSn, time: cur.collectionTime, token: fresh };
+  },
+
+  // MỚI (07/11/2026): cảnh báo theo thiết bị — /device/v1.0/alertList (giây, 7 ngày)
+  async fetchAlarms(creds, cached, stationIds) {
+    const { token, fresh } = await getToken(creds, cached);
+    const end = Math.floor(Date.now() / 1000), start = end - 7 * 86400;
+    const out = [];
+    for (const id of stationIds) {
+      const dev = await post(creds, token, "/station/v1.0/device", { stationId: Number(id) });
+      for (const d of (dev.deviceListItems || []).filter((x) => /INVERTER/i.test(x.deviceType || "")).slice(0, 5)) {
+        const r = await post(creds, token, "/device/v1.0/alertList", { deviceSn: d.deviceSn, startTimestamp: start, endTimestamp: end, page: 1, size: 50 });
+        for (const a of r.alertList || r.list || []) {
+          const lv = num(a.level);
+          out.push(alarm({
+            ext_id: id, code: a.alertCode ?? a.alertId, message: a.alertName || a.alertNameInPAAS || a.alertCode, advice: a.solution,
+            level: lv >= 2 ? "fault" : lv === 0 ? "info" : "warning", device_sn: d.deviceSn,
+            start: a.alertTime ?? a.startTime, end: num(a.endTime) ? a.endTime : null,
+          }));
+        }
+      }
+    }
+    return { alarms: out, token: fresh };
   },
 };

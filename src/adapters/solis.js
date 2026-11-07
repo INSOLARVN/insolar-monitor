@@ -1,7 +1,7 @@
 // SolisCloud Platform API V2.0 — chữ ký HMAC-SHA1
 // Lấy API ID/Secret: soliscloud.com > Account > Basic Settings > API Management
 import { md5B64, hmacB64 } from "../crypto.js";
-import { fetchJson, station, toW, toKWh, num, isoFromAny } from "./util.js";
+import { fetchJson, station, toW, toKWh, num, isoFromAny, alarm } from "./util.js";
 
 async function call(creds, path, body) {
   const base = (creds.api_url || "https://www.soliscloud.com:13333").replace(/\/$/, "");
@@ -187,5 +187,26 @@ export default {
       if (m[3] === "soc") return control(creds, sn, row[3], range(0, 100));
     }
     throw new Error("Cài đặt này chưa hỗ trợ qua SolisCloud");
+  },
+
+  // MỚI (07/11/2026): cảnh báo giống mục "Cảnh báo" trên SolisCloud — /v1/api/alarmList theo trạm, 7 ngày gần nhất.
+  // alarmLevel: 1 nhắc nhở, 2 thường, 3 khẩn cấp; state: 0 chưa xử lý, 1 đã xử lý, 2 đã tự hết
+  async fetchAlarms(creds, _cached, stationIds) {
+    const day = (k) => new Date(Date.now() + 7 * 3600e3 - k * 86400e3).toISOString().slice(0, 10);
+    const out = [];
+    for (const id of stationIds) {
+      const data = await call(creds, "/v1/api/alarmList", { pageNo: 1, pageSize: 100, stationId: String(id), alarmBeginTime: day(7), alarmEndTime: day(0) });
+      const recs = data?.records || data?.page?.records || [];
+      for (const a of recs) {
+        const lv = num(a.alarmLevel);
+        out.push(alarm({
+          ext_id: a.stationId ?? id, code: a.alarmCode, message: a.alarmMsg || a.alarmCode, advice: a.advice,
+          level: lv >= 3 ? "fault" : lv === 1 ? "info" : "warning",
+          device_sn: a.alarmDeviceSn, start: a.alarmBeginTime, end: num(a.alarmEndTime) ? a.alarmEndTime : null,
+          active: String(a.state) === "0" && !num(a.alarmEndTime),
+        }));
+      }
+    }
+    return { alarms: out };
   },
 };

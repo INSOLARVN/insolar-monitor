@@ -2,7 +2,7 @@
 // Lấy Client ID + Client Secret: developer.solaxcloud.com → Application → tạo ứng dụng (đăng nhập bằng tài khoản SolaXCloud).
 // Tài liệu: POST /openapi/auth/oauth/token (form: client_id, client_secret, grant_type=client_credentials) → token 30 ngày.
 // Mã thành công của các API dữ liệu là 10000 (đăng nhập là 0). businessType: 1 = dân dụng, 4 = thương mại/công nghiệp.
-import { fetchJson, station, num, isoFromAny, statusFromTime } from "./util.js";
+import { fetchJson, station, num, isoFromAny, statusFromTime, alarm } from "./util.js";
 
 const base = (c) => (c.api_url || "https://openapi-eu.solaxcloud.com").replace(/\/$/, "");
 const bt = (c) => Number(c.business_type) === 4 ? 4 : 1;
@@ -241,5 +241,23 @@ export default {
     const model = MODEL[Number(dev.deviceModel)];
     const device = { type: model ? `SolaX ${model}` : undefined, firmware: [dev.armVersion, dev.dspVersion].filter(Boolean).join(" / ") || undefined };
     return { list, serial: sn, time: inv.plantLocalTime, token: fresh, device };
+  },
+
+  // MỚI (07/11/2026): cảnh báo đang diễn ra — GET /openapi/v2/alarm/page_alarm_info (alarmState 1 = đang xảy ra)
+  async fetchAlarms(creds, cached, plantIds) {
+    const { token, fresh } = await getToken(creds, cached);
+    const out = [];
+    for (const id of plantIds) {
+      const r = await get(creds, token, "/openapi/v2/alarm/page_alarm_info", { plantId: id, alarmState: "1", pageNo: "1" });
+      for (const a of r?.records || []) {
+        const lv = String(a.alarmLevel ?? a.level ?? "");
+        out.push(alarm({
+          ext_id: a.plantId ?? id, code: a.errorCode ?? a.alarmCode ?? a.alarmName, message: a.alarmName || a.errorCode,
+          level: /^(3|high|fault)/i.test(lv) || /fault|error/i.test(a.alarmName || "") ? "fault" : /^1$|low/i.test(lv) ? "info" : "warning",
+          device_sn: a.deviceSn, start: a.alarmStartTime, end: a.alarmEndTime || null, active: Number(a.alarmState ?? 1) === 1,
+        }));
+      }
+    }
+    return { alarms: out, token: fresh };
   },
 };

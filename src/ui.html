@@ -116,7 +116,7 @@ a{color:inherit;text-decoration:none}
 @media (prefers-reduced-motion:reduce){.view{animation:none}}
 /* ---------- header kính ---------- */
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--hdr);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-bottom:1px solid var(--line);padding-block:10px 12px}
-.top .wrap{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;gap:8px}
+.top .wrap{display:grid;grid-template-columns:minmax(44px,auto) minmax(0,1fr) minmax(44px,auto);align-items:center;gap:8px} /* SỬA (07/11/2026): cột phải giãn được khi có 2 nút */
 .top h1{margin:0;font-size:17.5px;font-weight:800;letter-spacing:-.015em;text-align:center;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pill{display:inline-flex;align-items:center;gap:6px;background:var(--glass);border:1px solid var(--line);border-radius:99px;padding:3px 11px;font-size:12.5px;font-weight:600;box-shadow:inset 0 1px 0 var(--hi)}
 .sub{display:flex;justify-content:center;margin-top:5px}
@@ -220,6 +220,21 @@ a{color:inherit;text-decoration:none}
 .chip{flex:none;border:1px solid var(--line);background:var(--glass);border-radius:99px;padding:6px 12px;font-size:13px;font-weight:600;color:var(--ink2);transition:background .25s,color .25s,transform .2s}
 .chip:active{transform:scale(.96)}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* MỚI (07/11/2026): hàng lọc theo hãng + cảnh báo từ cloud hãng */
+.chips.brands{padding-top:4px}
+.icobtn .badge{position:absolute;top:-3px;right:-3px;min-width:17px;height:17px;padding:0 4px;border-radius:99px;background:var(--danger);color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1}
+.icobtn{position:relative}
+.alrow{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;text-align:left;width:100%;color:inherit}
+.alrow:last-child{border-bottom:0}
+.alrow .ai{flex:none;width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.alrow .ai svg{width:17px;height:17px}
+.alrow .ai.fault{background:var(--danger-soft);color:var(--danger)}
+.alrow .ai.warning{background:var(--sun-soft);color:var(--e)}
+.alrow .ai.info{background:var(--home-soft);color:var(--home)}
+.alrow .ab{flex:1;min-width:0}
+.alrow .ab b{display:block;font-weight:700}
+.alrow .ab small{color:var(--muted)}
+.alrow.done{opacity:.6}
 .slist{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:8px}
 @media (min-width:700px){.slist{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .sc{border-radius:var(--r);padding:14px;text-align:left;width:100%;display:block;transition:transform .25s cubic-bezier(.7,0,.2,1)}
@@ -645,6 +660,7 @@ async function render() {
   if (h === "#/gateways") return renderGateways();
   if (h === "#/accounts") return renderAccounts();
   if (h === "#/me") return renderMe();
+  if (h === "#/alarms") return renderAlarms();
   return renderList();
 }
 const TOP_TABS = [["#/", "home", "Trạm"], ["#/gateways", "gw", "Gateway"], ["#/accounts", "cloud", "Cloud hãng"], ["#/me", "user", "Tài khoản"]];
@@ -873,11 +889,14 @@ async function loadAuthCfg(u) {
 }
 
 // ================= Danh sách trạm =================
-const F = { q: "", status: "" };
+const F = { q: "", status: "", brand: "" };
+// MỚI (07/11/2026): trạm có lỗi đang mở trên cloud hãng thì hiện "Cảnh báo"; nhóm theo hãng (gộp 2 kiểu Solarman)
+const stStatus = (s) => (s.status === "online" && s.fault_count > 0 ? "alarm" : s.status);
+const brandKey = (s) => (s.gateway_id ? "Gateway" : BRAND[s.brand] || s.brand || "Khác");
 async function renderList() {
   setTabs(TOP_TABS, "#/");
   app.innerHTML = `<div class="page">${header("INSOLAR Monitor", `<span class="pill">${ico("bolt", 'style="width:14px;height:14px;color:var(--sun)"')} Toàn bộ hệ thống</span>`,
-    themeBtn(), `<button class="icobtn" id="bSync" aria-label="Đồng bộ">${ico("refresh")}</button>`)}
+    themeBtn(), `<span style="display:inline-flex;gap:8px"><a class="icobtn" href="#/alarms" aria-label="Cảnh báo" id="bAl">${ico("alert")}</a><button class="icobtn" id="bSync" aria-label="Đồng bộ">${ico("refresh")}</button></span>`)}
     <div class="wrap ${viewCls("top", 0)}" style="padding-top:12px"><div id="lv"><div class="spin"></div></div>
     <div class="foot"><button class="btn" id="bLogout">${ico("out")} Đăng xuất</button></div></div></div>`;
   $("#bLogout").onclick = async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); go("#/login"); };
@@ -892,34 +911,85 @@ async function loadList() {
 function drawList() {
   const L = S.stations, el = $("#lv");
   if (!el) return;
-  const sum = (k) => L.reduce((a, s) => a + (Number(s[k]) || 0), 0);
-  const cnt = (st) => L.filter((s) => s.status === st).length;
+  const LB = L.filter((s) => !F.brand || brandKey(s) === F.brand);
+  const sum = (k) => LB.reduce((a, s) => a + (Number(s[k]) || 0), 0); // SỬA (07/11/2026): tổng theo hãng đang lọc
+  const cnt = (st) => LB.filter((s) => stStatus(s) === st).length;
   const q = F.q.toLowerCase();
-  const list = L.filter((s) => (!F.status || s.status === F.status) && (!q || [s.name, s.customer, s.phone, s.address].join(" ").toLowerCase().includes(q)));
+  const list = LB.filter((s) => (!F.status || stStatus(s) === F.status) && (!q || [s.name, s.customer, s.phone, s.address].join(" ").toLowerCase().includes(q)));
+  const brands = [...L.reduce((m, s) => m.set(brandKey(s), (m.get(brandKey(s)) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
+  if (F.brand && !brands.some(([k]) => k === F.brand)) F.brand = "";
+  const alN = L.reduce((t, s) => t + (s.alarm_count || 0), 0);
+  const bA = $("#bAl"); if (bA) bA.innerHTML = ico("alert") + (alN ? `<span class="badge">${alN > 99 ? "99+" : alN}</span>` : "");
   const [pv, pvu] = fWsplit(sum("pv_power_w"));
   el.innerHTML = `
   <div class="hero"><svg class="sunart" viewBox="0 0 100 100"><circle cx="50" cy="50" r="22" fill="#fff"/>${[...Array(12)].map((_, i) => `<rect x="48" y="4" width="4" height="16" rx="2" fill="#fff" transform="rotate(${i * 30} 50 50)"/>`).join("")}</svg>
     <div class="lbl">Công suất phát hiện tại</div><div class="val">${pv} <span style="font-size:20px">${pvu}</span></div>
-    <div class="row"><div><span>Hôm nay</span><b>${nf(sum("today_kwh"), 1)} kWh</b></div><div><span>Lắp đặt</span><b>${nf(sum("capacity_kwp"), 1)} kWp</b></div><div><span>Trạm</span><b>${L.length}</b></div></div></div>
+    <div class="row"><div><span>Hôm nay</span><b>${nf(sum("today_kwh"), 1)} kWh</b></div><div><span>Lắp đặt</span><b>${nf(sum("capacity_kwp"), 1)} kWp</b></div><div><span>Trạm</span><b>${LB.length}</b></div></div></div>
   <div class="search"><input id="q" placeholder="Tìm trạm, khách hàng, số điện thoại…" value="${esc(F.q)}" aria-label="Tìm kiếm"></div>
-  <div class="chips">${[["", "Tất cả", L.length], ["online", "Trực tuyến", cnt("online")], ["offline", "Ngoại tuyến", cnt("offline")], ["alarm", "Cảnh báo", cnt("alarm")]]
+  ${brands.length > 1 ? `<div class="chips brands" aria-label="Lọc theo hãng">${[["", L.length], ...brands].map(([k, n]) => `<button class="chip ${F.brand === k ? "on" : ""}" data-b="${esc(k)}">${esc(k === "" ? "Mọi hãng" : k)} · ${n}</button>`).join("")}</div>` : ""}
+  <div class="chips">${[["", "Tất cả", LB.length], ["online", "Trực tuyến", cnt("online")], ["offline", "Ngoại tuyến", cnt("offline")], ["alarm", "Cảnh báo", cnt("alarm")]]
     .map(([k, t, n]) => `<button class="chip ${F.status === k ? "on" : ""}" data-s="${k}">${t} · ${n}</button>`).join("")}</div>
   <div class="slist">${list.length ? list.map(stationCard).join("") : `<div class="empty">${L.length ? "Không có trạm phù hợp." : "Chưa có trạm nào.<br>Thêm <b>Gateway INSOLAR</b> hoặc kết nối <b>Cloud hãng</b> ở thanh dưới."}</div>`}</div>`;
   $("#q").oninput = (e) => { F.q = e.target.value; const pos = e.target.selectionStart; drawList(); const i = $("#q"); i.focus(); i.setSelectionRange(pos, pos); };
   el.querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => { F.status = b.dataset.s; drawList(); }));
+  el.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { F.brand = b.dataset.b; drawList(); }));
 }
 function stationCard(s) {
   const pct = s.capacity_kwp ? Math.min(100, (s.pv_power_w || 0) / (s.capacity_kwp * 10)) : 0;
   const bat = s.battery_power_w;
   return `<a class="sc" href="#/st/${s.id}/overview">
-    <div class="t"><span class="dot ${s.status}"></span><h4>${esc(s.name)}</h4><span class="tag ${s.gateway_id ? "g" : "b"}">${s.gateway_id ? "Gateway" : esc(BRAND[s.brand] || s.brand)}</span></div>
-    <div class="meta"><span>${STATUS[s.status] || ""}</span><span>· ${ago(s.data_time || s.synced_at)}</span>${s.customer ? `<span>· ${esc(s.customer)}</span>` : ""}${s.capacity_kwp ? `<span>· ${nf(s.capacity_kwp)} kWp</span>` : ""}</div>
+    <div class="t"><span class="dot ${stStatus(s)}"></span><h4>${esc(s.name)}</h4>${s.alarm_count ? `<span class="tag ${s.fault_count ? "r" : "y"}">${ico("alert", 'style="width:12px;height:12px;vertical-align:-2px"')} ${s.alarm_count}</span>` : ""}<span class="tag ${s.gateway_id ? "g" : "b"}">${s.gateway_id ? "Gateway" : esc(BRAND[s.brand] || s.brand)}</span></div>
+    <div class="meta"><span>${STATUS[stStatus(s)] || ""}</span><span>· ${ago(s.data_time || s.synced_at)}</span>${s.customer ? `<span>· ${esc(s.customer)}</span>` : ""}${s.capacity_kwp ? `<span>· ${nf(s.capacity_kwp)} kWp</span>` : ""}</div>
     <div class="mini">
       <div style="color:var(--sun)">${ico("panel")}<b style="color:var(--ink)">${fW(s.pv_power_w)}</b><span>PV</span></div>
       <div style="color:var(--home)">${ico("home")}<b style="color:var(--ink)">${fW(s.load_power_w)}</b><span>Tải</span></div>
       <div style="color:var(--bat)">${ico("battery")}<b style="color:var(--ink)">${isNum(s.battery_soc) ? Math.round(s.battery_soc) + "%" : "--"}</b><span>${isNum(bat) ? (bat > 30 ? "Đang xả" : bat < -30 ? "Đang sạc" : "Pin") : "Pin"}</span></div>
       <div style="color:var(--e)">${ico("chart")}<b style="color:var(--ink)">${nf(s.today_kwh, 1)}</b><span>kWh hôm nay</span></div>
     </div><div class="bar"><i style="width:${pct}%"></i></div></a>`;
+}
+
+// ================= Cảnh báo từ cloud hãng (MỚI 07/11/2026) =================
+const AL_LV = { fault: "Lỗi", warning: "Cảnh báo", info: "Thông báo" };
+const fDT = (iso) => (iso ? new Date(iso).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "");
+function alarmRow(a, withStation) {
+  const tag = withStation ? "a" : "div";
+  return `<${tag} class="alrow ${a.active ? "" : "done"}" ${withStation ? `href="#/st/${a.station_id}/overview"` : ""}><span class="ai ${a.level}">${ico("alert")}</span>
+    <span class="ab"><b>${esc(a.message || a.code || "Cảnh báo")}</b>
+    <small>${withStation ? esc(a.station_name || "Trạm " + a.station_id) + " · " : ""}${esc(BRAND[a.brand] || a.brand || "")} · ${AL_LV[a.level] || "Cảnh báo"}${a.code && a.code !== a.message ? " · mã " + esc(a.code) : ""}${a.device_sn ? " · " + esc(a.device_sn) : ""}<br>
+    ${a.start_at ? "Từ " + fDT(a.start_at) : ""}${a.active ? ` · <span style="color:var(--danger);font-weight:700">đang xảy ra</span>` : a.end_at ? " → hết " + fDT(a.end_at) : ""}</small>
+    ${a.advice ? `<small style="display:block;margin-top:4px">Gợi ý: ${esc(a.advice)}</small>` : ""}</span></${tag}>`;
+}
+function stationAlarmsHtml() {
+  const L = S.stAlarms;
+  if (!L || S.st?.gateway_id) return "";
+  const act = L.filter((a) => a.active);
+  return `<div class="card mt"><h3>${ico("alert", `style="width:20px;height:20px;color:${act.length ? "var(--danger)" : "var(--muted)"}"`)} Cảnh báo từ ${esc(BRAND[S.st.brand] || "hãng")} <span class="tag ${act.length ? "r" : ""}">${act.length ? act.length + " đang xảy ra" : "Không có lỗi"}</span></h3>
+    ${L.length ? L.slice(0, 15).map((a) => alarmRow(a, false)).join("") : `<p class="small muted" style="margin:0">Chưa có cảnh báo nào trong 7 ngày (đồng bộ 15 phút/lần).</p>`}</div>`;
+}
+const FA = { active: "1", brand: "" };
+async function renderAlarms() {
+  setTabs(TOP_TABS, "#/");
+  app.innerHTML = `<div class="page">${header("Cảnh báo & sự cố", `<span class="pill">${ico("alert", 'style="width:14px;height:14px;color:var(--danger)"')} Đồng bộ từ cloud các hãng</span>`,
+    `<a class="icobtn" href="#/" aria-label="Quay lại">${ico("back")}</a>`, `<button class="icobtn" id="bSync" aria-label="Đồng bộ">${ico("refresh")}</button>`)}
+    <div class="wrap" style="padding-top:12px"><div id="alv"><div class="spin"></div></div></div></div>`;
+  $("#bSync").onclick = async () => { toast("Đang đồng bộ cảnh báo…"); await api("/api/sync-all", { method: "POST" }); setTimeout(loadAlarms, 8000); };
+  await loadAlarms();
+  S.timer = setInterval(() => !document.hidden && loadAlarms(), 60000);
+}
+async function loadAlarms() {
+  let L;
+  try { L = await api(`/api/alarms?limit=300${FA.active ? "&active=" + FA.active : ""}`); } catch (e) { const el = $("#alv"); if (el) el.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const el = $("#alv"); if (!el) return;
+  const bn = (a) => BRAND[a.brand] || a.brand || "Khác";
+  const brands = [...new Set(L.map(bn))];
+  const list = L.filter((a) => !FA.brand || bn(a) === FA.brand);
+  const c = (lv) => list.filter((a) => a.active && a.level === lv).length;
+  el.innerHTML = `<div class="chips">${[["1", "Đang xảy ra"], ["", "Tất cả 7–90 ngày"]].map(([k, t]) => `<button class="chip ${FA.active === k ? "on" : ""}" data-a="${k}">${t}</button>`).join("")}</div>
+    ${brands.length > 1 ? `<div class="chips brands">${["", ...brands].map((k) => `<button class="chip ${FA.brand === k ? "on" : ""}" data-b="${esc(k)}">${esc(k || "Mọi hãng")}</button>`).join("")}</div>` : ""}
+    <div class="card mt"><h3>${ico("alert", 'style="width:20px;height:20px;color:var(--danger)"')} ${list.length} mục <span class="tag r">${c("fault")} lỗi</span><span class="tag y" style="margin-left:6px">${c("warning")} cảnh báo</span></h3>
+    ${list.length ? list.map((a) => alarmRow(a, true)).join("") : `<p class="small muted" style="margin:0">Không có cảnh báo nào. Hệ thống đồng bộ cảnh báo từ Deye Cloud, SolisCloud, Solarman, SolaX, PV Pro 15 phút/lần.</p>`}</div>`;
+  el.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => { FA.active = b.dataset.a; loadAlarms(); }));
+  el.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { FA.brand = b.dataset.b; loadAlarms(); }));
 }
 
 // ================= Trạm: khung chung =================
@@ -939,7 +1009,7 @@ async function renderStation(id, tab) {
 }
 function drawStationHeader(st, id) {
   const el = $("#sh"); if (!el) return;
-  const status = S.online === false && S.detail ? "offline" : st?.status;
+  const status = S.online === false && S.detail ? "offline" : st ? stStatus(st) : undefined;
   const src = st?.gateway_id ? `${ico("gw", 'style="width:14px;height:14px"')} Gateway` : `${ico("cloud", 'style="width:14px;height:14px"')} ${esc(BRAND[st?.brand] || st?.brand || "")}`;
   el.innerHTML = header(esc(st?.name || "Trạm"), `<span class="pill"><span class="dot ${status || ""}"></span>${STATUS[status] || "…"} <span class="muted">|</span> ${src}</span>`,
     SHARE ? themeBtn() : `<a class="icobtn" href="#/" aria-label="Quay lại">${ico("back")}</a>`,
@@ -1289,9 +1359,11 @@ async function viewOverview() {
   const draw = () => {
     const el = $("#sv"); if (!el) return;
     if (!S.detail) { el.innerHTML = `<div class="empty">Chưa có dữ liệu chi tiết.${S.detailErr ? "<br><small>" + esc(S.detailErr) + "</small>" : ""}<br>${S.st?.gateway_id ? "Gateway chưa gửi dữ liệu lần nào." : ""}</div>`; return; }
-    el.innerHTML = overviewHtml(S.detail, S.online === false ? "offline" : S.st.status);
+    el.innerHTML = overviewHtml(S.detail, S.online === false ? "offline" : S.st.status) + stationAlarmsHtml();
     drawStationHeader(S.st, S.st.id);
   };
+  // MỚI (07/11/2026): cảnh báo/lỗi của trạm lấy từ cloud hãng
+  if (!SHARE && S.alarmsFor !== S.st.id) { S.stAlarms = null; S.alarmsFor = S.st.id; api(`/api/alarms?station=${S.st.id}&limit=30`).then((r) => { S.stAlarms = r; draw(); }).catch(() => {}); }
   if (!S.detail) { try { await loadDetail(); } catch (e) { $("#sv").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; } }
   draw();
   window.__insRedraw = draw;

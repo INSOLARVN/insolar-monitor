@@ -2,7 +2,7 @@
 // Biến tần Chisage, Sosen, Alpsolar… gắn logger E-Linter đẩy dữ liệu lên đây. Đăng nhập bằng chính tài khoản PV Pro.
 // Tham khảo: github.com/jamesridgway/sunsynk-api-client (MIT), github.com/chukaonline/ha-alpsolar-inteless.
 // Đăng nhập mới: lấy khoá công khai RSA → mã hoá mật khẩu (PKCS#1 v1.5) → /oauth/token/new; máy chủ cũ: /oauth/token mật khẩu thường.
-import { fetchJson, station, num, isoFromAny, statusFromTime } from "./util.js";
+import { fetchJson, station, num, isoFromAny, statusFromTime, alarm } from "./util.js";
 
 // Máy chủ thử lần lượt khi người dùng không nhập API URL
 const HOSTS = ["https://pv.inteless.com", "https://api.inteless.com", "https://euapi.inteless.com", "https://usapi.inteless.com", "https://api.sunsynk.net"];
@@ -297,5 +297,27 @@ export default {
       }
     }
     return { points: [...pts.values()].sort((a, b) => (a.ts < b.ts ? -1 : 1)), token: fresh };
+  },
+
+  // MỚI (07/11/2026): sự kiện/lỗi đang có của biến tần — GET api/v1/event/{sn}/realtime (giống tab Sự kiện trên PV Pro / Sunsynk)
+  async fetchAlarms(creds, cached, plantIds) {
+    const { token, host, fresh } = await getToken(creds, cached);
+    const want = new Set(plantIds.map(String));
+    const invs = (await inverters(host, token)).filter((x) => want.has(String(x.plant?.id)));
+    const out = [];
+    for (const inv of invs.slice(0, 40)) {
+      let list = [];
+      try { list = (await get(host, token, `api/v1/event/${inv.sn}/realtime`, { lan: "en" })) || []; } catch { continue; }
+      for (const e of [].concat(list)) {
+        const msg = e.eventDescription || e.description || e.msg || e.content || e.eventName || e.name || e.eventCode || e.code;
+        const kind = String(e.eventType ?? e.type ?? e.level ?? "");
+        out.push(alarm({
+          ext_id: inv.plant?.id, code: e.eventCode ?? e.code ?? msg, message: msg,
+          level: /fault|err|protect|^3$/i.test(kind + " " + msg) ? "fault" : /info|^1$/i.test(kind) ? "info" : "warning",
+          device_sn: inv.sn, start: e.createAt || e.eventTime || e.time || e.startTime || null, active: true,
+        }));
+      }
+    }
+    return { alarms: out, token: fresh };
   },
 };

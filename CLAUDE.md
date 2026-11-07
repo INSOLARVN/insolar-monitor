@@ -42,6 +42,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 5. **Tài khoản (src/auth.js):** đăng nhập email hoặc SĐT + mật khẩu (PBKDF2 100k); ô tài khoản trống hoặc `admin` = chủ hệ thống; `ADMIN_PASSWORD` luôn đăng nhập được vào chủ (khẩn cấp). Quên mật khẩu: mã 6 số gửi email (Gmail SMTP cổng 465 qua `cloudflare:sockets`, hoặc Resend) hoặc 8 mã khôi phục dùng 1 lần. Google (GIS) / Apple (popup) — chỉ hiện khi chủ nhập Client ID / Services ID, chỉ email đã được thêm mới vào được. Chủ quản lý người dùng (thêm, khoá, xoá, đặt mật khẩu). Đổi mật khẩu → tăng `sv` → đăng xuất máy khác. Giới hạn thử sai (`auth_hits`). Cấu hình gửi mail lưu mã hoá trong `app_config`.
    - SMS OTP **chưa bật** (tốn phí). Gửi email qua Gmail **chưa thử thật** — bấm "Gửi thử" trong Tài khoản → Cấu hình đăng nhập.
 
+6. **Cảnh báo/sự cố từ cloud hãng (07/11/2026):** adapter có `fetchAlarms` (Deye `/station/alertList`, Solis `/v1/api/alarmList`, SolaX `/openapi/v2/alarm/page_alarm_info`, PV Pro `api/v1/event/{sn}/realtime`, Solarman OpenAPI `/device/v1.0/alertList`, Solarman app `/maintain-s/operating/alert/search`) → bảng `alarms` (tự tạo trong `ensureAlarms`), đồng bộ 15 phút/lần (hoặc khi bấm đồng bộ), tối đa 60 trạm/tài khoản/lượt. Trang `#/alarms` (nút chuông), thẻ cảnh báo trong Tổng quan trạm; trạm có lỗi đang mở hiện "Cảnh báo". Danh sách trạm có hàng lọc theo hãng. FoxESS, Sigenergy, gateway chưa có. **Chưa thử với tài khoản thật.**
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.

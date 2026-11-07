@@ -23,7 +23,7 @@ const SEC_HEADERS = { "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosn
 // ---------- Đồng bộ cloud ----------
 const slot5 = () => new Date(Math.floor(Date.now() / 300e3) * 300e3).toISOString();
 
-async function syncAccount(env, acc) {
+async function syncAccount(env, acc, opt = {}) {
   const adapter = ADAPTERS[acc.brand];
   if (!adapter) throw new Error("Không hỗ trợ hãng " + acc.brand);
   const creds = await decrypt(env.ENC_KEY, acc.creds_enc);
@@ -56,7 +56,10 @@ async function syncAccount(env, acc) {
     stmts.push(env.DB.prepare("UPDATE accounts SET last_sync=?2, last_error=NULL, token_enc=COALESCE(?3, token_enc) WHERE id=?1")
       .bind(acc.id, now, token ? await encrypt(env.ENC_KEY, token) : null));
     for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
-    return { ok: true, count: stations.length };
+    // MỚI (07/11/2026): đồng bộ cảnh báo/lỗi của hãng — 15 phút/lần (hoặc khi bấm đồng bộ)
+    let alarms = null;
+    if (adapter.fetchAlarms && (opt.alarms || Math.floor(Date.now() / 300e3) % 3 === 0)) alarms = await syncAlarms(env, acc, creds, token || cached);
+    return { ok: true, count: stations.length, alarms };
   } catch (e) {
     const msg = String(e.message || e).slice(0, 300);
     await env.DB.prepare("UPDATE accounts SET last_sync=?2, last_error=?3, token_enc=NULL WHERE id=?1").bind(acc.id, now, msg).run();
@@ -64,9 +67,58 @@ async function syncAccount(env, acc) {
   }
 }
 
-async function syncAll(env) {
+// ---------- Cảnh báo / lỗi từ cloud hãng (MỚI 07/11/2026) ----------
+// Mỗi adapter có fetchAlarms(creds, cached, extIds) → { alarms: [alarm()], token }. Đồng bộ 15 phút/lần (cron 5 phút, lấy 1/3 lượt).
+let alarmsReady = false;
+async function ensureAlarms(env) {
+  if (alarmsReady) return;
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS alarms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, station_id INTEGER NOT NULL, account_id INTEGER, brand TEXT,
+    code TEXT, message TEXT, level TEXT, device_sn TEXT, advice TEXT,
+    start_at TEXT, end_at TEXT, active INTEGER NOT NULL DEFAULT 1, updated_at TEXT,
+    UNIQUE(station_id, code, start_at))`).run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS alarms_active ON alarms(active, station_id)").run();
+  alarmsReady = true;
+}
+const ALARM_MAX_STATIONS = 60; // giới hạn số trạm/lượt để không vượt số request của Worker
+
+async function syncAlarms(env, acc, creds, token) {
+  const ad = ADAPTERS[acc.brand];
+  if (!ad?.fetchAlarms) return { ok: false, error: "Hãng này chưa hỗ trợ đồng bộ cảnh báo" };
+  await ensureAlarms(env);
+  const { results: sts } = await env.DB.prepare("SELECT id, ext_id FROM stations WHERE account_id=?1 ORDER BY id").bind(acc.id).all();
+  if (!sts.length) return { ok: true, count: 0 };
+  const byExt = new Map(sts.map((x) => [String(x.ext_id), x.id]));
+  try {
+    const r = await ad.fetchAlarms(creds, token, sts.slice(0, ALARM_MAX_STATIONS).map((x) => x.ext_id));
+    const now = new Date().toISOString();
+    // Đánh dấu hết toàn bộ cảnh báo đang mở của tài khoản rồi bật lại những cái cloud còn trả về
+    const stmts = [env.DB.prepare("UPDATE alarms SET active=0, end_at=COALESCE(end_at, ?2), updated_at=?2 WHERE account_id=?1 AND active=1").bind(acc.id, now)];
+    let n = 0;
+    for (const a of r.alarms || []) {
+      const sid = byExt.get(String(a.ext_id));
+      if (!sid) continue;
+      n++;
+      stmts.push(env.DB.prepare(
+        `INSERT INTO alarms (station_id, account_id, brand, code, message, level, device_sn, advice, start_at, end_at, active, updated_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+         ON CONFLICT(station_id, code, start_at) DO UPDATE SET message=excluded.message, level=excluded.level, advice=COALESCE(excluded.advice, alarms.advice),
+           end_at=excluded.end_at, active=excluded.active, updated_at=excluded.updated_at`
+      ).bind(sid, acc.id, acc.brand, a.code, a.message, a.level, a.device_sn, a.advice, a.start_at || "", a.end_at, a.active ? 1 : 0, now));
+    }
+    // Giữ lịch sử 90 ngày
+    stmts.push(env.DB.prepare("DELETE FROM alarms WHERE active=0 AND COALESCE(end_at, updated_at) < ?1").bind(new Date(Date.now() - 90 * 86400e3).toISOString()));
+    for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
+    if (r.token) await env.DB.prepare("UPDATE accounts SET token_enc=?2 WHERE id=?1").bind(acc.id, await encrypt(env.ENC_KEY, r.token)).run();
+    return { ok: true, count: n };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e).slice(0, 300) };
+  }
+}
+
+async function syncAll(env, opt = {}) {
   const { results } = await env.DB.prepare("SELECT * FROM accounts WHERE enabled=1").all();
-  await Promise.allSettled(results.map((a) => syncAccount(env, a)));
+  await Promise.allSettled(results.map((a) => syncAccount(env, a, opt)));
   const old = new Date(Date.now() - 10 * 60e3).toISOString();
   await env.DB.batch([
     env.DB.prepare("UPDATE stations SET status='offline' WHERE gateway_id IS NOT NULL AND status!='offline' AND (data_time IS NULL OR data_time < ?1)").bind(old),
@@ -262,7 +314,9 @@ function demoDay(st, d) {
 // SỬA (31/10/2026): thêm s.account_id, s.ext_id (mã trạm bên hãng, thiếu → gọi cloud bằng 'undefined') — thiếu cột này làm mở chi tiết trạm cloud báo D1_TYPE_ERROR (bind undefined)
 const STATION_COLS = `s.id, s.brand, s.name, s.customer, s.phone, s.note, s.address, s.capacity_kwp, s.battery_kwh, s.status, s.pv_power_w,
   s.load_power_w, s.grid_power_w, s.battery_power_w, s.battery_soc, s.today_kwh, s.total_kwh, s.data_time, s.synced_at, s.share_token,
-  s.gateway_id, s.account_id, s.ext_id, s.lat, s.lon, COALESCE(a.label, 'Gateway INSOLAR') AS account_label`;
+  s.gateway_id, s.account_id, s.ext_id, s.lat, s.lon, COALESCE(a.label, 'Gateway INSOLAR') AS account_label,
+  (SELECT COUNT(*) FROM alarms al WHERE al.station_id=s.id AND al.active=1) AS alarm_count,
+  (SELECT COUNT(*) FROM alarms al WHERE al.station_id=s.id AND al.active=1 AND al.level='fault') AS fault_count`;
 
 const GW_FIELDS = ["name", "profile", "params", "slave", "transport", "v5_host", "v5_serial", "poll", "can_enabled", "bms_kind", "bms_transport",
   "bms_ble_names", "allow_write", "invert_battery", "invert_grid"];
@@ -291,6 +345,7 @@ async function getStation(env, id) {
 async function api(req, env, url, ctx) {
   const p = url.pathname;
   await ensureLatLon(env); // MỚI (31/10/2026): tự thêm cột toạ độ cho CSDL tạo trước bản này
+  await ensureAlarms(env); // MỚI (07/11/2026): bảng cảnh báo từ cloud hãng
   const method = req.method;
 
   await ensureAuth(env);
@@ -320,7 +375,7 @@ async function api(req, env, url, ctx) {
 
   if (p === "/api/stations" && method === "GET") {
     const { results } = await env.DB.prepare(
-      `SELECT ${STATION_COLS} FROM stations s LEFT JOIN accounts a ON a.id=s.account_id ORDER BY CASE s.status WHEN 'alarm' THEN 0 WHEN 'offline' THEN 1 ELSE 2 END, s.name`
+      `SELECT ${STATION_COLS} FROM stations s LEFT JOIN accounts a ON a.id=s.account_id ORDER BY CASE WHEN s.status='alarm' OR fault_count>0 THEN 0 WHEN s.status='offline' THEN 1 ELSE 2 END, s.name`
     ).all();
     return json(results);
   }
@@ -441,7 +496,7 @@ async function api(req, env, url, ctx) {
     }
     const r = await env.DB.prepare("INSERT INTO accounts (brand, label, creds_enc) VALUES (?1, ?2, ?3) RETURNING *")
       .bind(b.brand, String(b.label || ad.label).slice(0, 80), await encrypt(env.ENC_KEY, creds)).first();
-    const res = await syncAccount(env, r);
+    const res = await syncAccount(env, r, { alarms: true });
     if (!res.ok) {
       await env.DB.prepare("DELETE FROM accounts WHERE id=?1").bind(r.id).run();
       return json({ error: "Kết nối thất bại: " + res.error }, 400);
@@ -453,7 +508,7 @@ async function api(req, env, url, ctx) {
     const id = Number(m[1]);
     const acc = await env.DB.prepare("SELECT * FROM accounts WHERE id=?1").bind(id).first();
     if (!acc) return json({ error: "Không tìm thấy" }, 404);
-    if (m[2] && method === "POST") return json(await syncAccount(env, acc));
+    if (m[2] && method === "POST") return json(await syncAccount(env, acc, { alarms: true }));
     if (method === "PATCH") {
       const b = await req.json();
       await env.DB.prepare("UPDATE accounts SET enabled=?2 WHERE id=?1").bind(id, b.enabled ? 1 : 0).run();
@@ -471,8 +526,24 @@ async function api(req, env, url, ctx) {
   }
 
   if (p === "/api/sync-all" && method === "POST") {
-    ctx.waitUntil(syncAll(env));
+    ctx.waitUntil(syncAll(env, { alarms: true }));
     return json({ ok: true });
+  }
+
+  // MỚI (07/11/2026): danh sách cảnh báo/lỗi đồng bộ từ cloud hãng. ?active=1 chỉ cái đang xảy ra, ?station=ID theo trạm
+  if (p === "/api/alarms" && method === "GET") {
+    const q = url.searchParams;
+    const where = [], args = [];
+    if (q.get("active") === "1") where.push("al.active=1");
+    if (q.get("active") === "0") where.push("al.active=0");
+    if (q.get("station")) { args.push(Number(q.get("station"))); where.push(`al.station_id=?${args.length}`); }
+    const limit = Math.min(500, Number(q.get("limit")) || 200);
+    const { results } = await env.DB.prepare(
+      `SELECT al.id, al.station_id, al.brand, al.code, al.message, al.level, al.device_sn, al.advice, al.start_at, al.end_at, al.active, al.updated_at, s.name AS station_name
+       FROM alarms al LEFT JOIN stations s ON s.id=al.station_id ${where.length ? "WHERE " + where.join(" AND ") : ""}
+       ORDER BY al.active DESC, CASE al.level WHEN 'fault' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END, al.start_at DESC LIMIT ${limit}`
+    ).bind(...args).all();
+    return json(results);
   }
 
   return json({ error: "Not found" }, 404);

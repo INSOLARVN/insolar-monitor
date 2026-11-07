@@ -37,6 +37,12 @@ const ST = [
   { id: 4, name: "Nhà chị Lan – TP Thanh Hóa", customer: "Chị Lan", kwp: 8, profile: "srne_asf", params: { mppt: 2, phase: 1, pack: 1 }, gw: true, status: "offline" },
   { id: 5, name: "Kho lạnh Nghi Sơn", customer: "Cty Hải sản NS", kwp: 50, profile: "deye_p3", params: { mppt: 4, phase: 3, pack: 4 }, gw: false, brand: "solis" },
 ];
+// MỚI (07/11/2026): cảnh báo giả lập từ cloud hãng
+const ALARMS = [
+  { id: 1, station_id: 5, station_name: "Kho lạnh Nghi Sơn", brand: "solis", code: "1011", message: "Điện áp lưới thấp (UN-G-V01)", level: "fault", device_sn: "1031180232110041", advice: "Kiểm tra điện áp lưới tại tủ điện", start_at: new Date(Date.now() - 42 * 60e3).toISOString(), end_at: null, active: 1 },
+  { id: 2, station_id: 3, station_name: "Homestay Hải Tiến", brand: "solarman", code: "F13", message: "F13 Grid Mode changed", level: "info", device_sn: "2402010117", start_at: new Date(Date.now() - 3 * 3600e3).toISOString(), end_at: null, active: 1 },
+  { id: 3, station_id: 3, station_name: "Homestay Hải Tiến", brand: "solarman", code: "F47", message: "F47 AC OverFreq Fault", level: "fault", device_sn: "2402010117", start_at: new Date(Date.now() - 30 * 3600e3).toISOString(), end_at: new Date(Date.now() - 29.9 * 3600e3).toISOString(), active: 0 },
+];
 const regsById = {}, scById = {};
 for (const s of ST) {
   const r = simulateRegisters(s.profile, s.params, { hour: HOUR, kwp: s.kwp, rated: s.kwp >= 15 ? 12000 : 8000 });
@@ -79,7 +85,8 @@ function row(s) {
   const d = detail(s), m = summary(d);
   return { id: s.id, brand: s.gw ? s.profile.split("_")[0] : s.brand, name: s.name, customer: s.customer, phone: s.phone || "", note: "", address: "Thanh Hóa",
     capacity_kwp: s.kwp, status: s.status || (s.id === 5 ? "alarm" : "online"), ...m, data_time: new Date(Date.now() - 60e3).toISOString(),
-    synced_at: new Date().toISOString(), share_token: null, gateway_id: s.gw ? d.gateway.id : null, account_label: s.gw ? "Gateway INSOLAR" : "Cloud" };
+    synced_at: new Date().toISOString(), share_token: null, gateway_id: s.gw ? d.gateway.id : null, account_label: s.gw ? "Gateway INSOLAR" : "Cloud",
+    alarm_count: ALARMS.filter((a) => a.station_id === s.id && a.active).length, fault_count: ALARMS.filter((a) => a.station_id === s.id && a.active && a.level === "fault").length };
 }
 function dayPoints(s) {
   const out = [];
@@ -116,6 +123,7 @@ window.__mock = async (path, opt = {}) => {
   if (p === "/api/users" && (opt.method || "GET") === "GET") return R([ME, { id: 2, name: "Kỹ thuật Tuấn", email: null, phone: "0987654321", role: "staff" }]);
   if (p.startsWith("/api/users") || p.startsWith("/api/auth-config")) return R((opt.method || "GET") === "GET" ? { google_client_id: null, apple_service_id: null, mail: null } : { ok: true, to: ME.email });
   if (p === "/api/stations") return R(ST.map(row));
+  if (p === "/api/alarms") { const q = u.searchParams; return R(ALARMS.filter((a) => (!q.get("station") || a.station_id === Number(q.get("station"))) && (q.get("active") !== "1" || a.active))); }
   if (p === "/api/profiles") return R(profileList());
   if (p === "/api/brands") return R([{ brand: "solarman", label: "Solarman (Deye, SRNE… gắn logger Solarman)", help: "Gửi email service@solarmanpv.com xin quyền OpenAPI.", fields: [{ key: "app_id", label: "App ID" }, { key: "app_secret", label: "App Secret", type: "password" }] }]);
   if (p === "/api/accounts") return R([{ id: 1, brand: "solarman", label: "Solarman – tài khoản công ty", enabled: 1, last_sync: new Date().toISOString(), station_count: 1 }, { id: 2, brand: "solis", label: "SolisCloud", enabled: 1, last_sync: new Date().toISOString(), station_count: 1 }]);

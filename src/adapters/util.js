@@ -86,3 +86,26 @@ export function statusFromTime(iso, fallback = "online") {
   if (!iso) return fallback;
   return Date.now() - new Date(iso).getTime() > 30 * 60e3 ? "offline" : fallback;
 }
+
+// MỚI (07/11/2026): chuẩn hoá 1 cảnh báo/lỗi lấy từ cloud hãng → lưu bảng alarms
+// level: "fault" (lỗi/sự cố), "warning" (cảnh báo), "info" (nhắc nhở)
+export function alarm(o) {
+  // Mỗi adapter tự quy đổi mức của hãng; ở đây chỉ đoán thêm theo chữ nếu adapter đưa chuỗi gốc
+  const lv = String(o.level ?? "").toLowerCase();
+  const level = ["fault", "warning", "info"].includes(lv) ? lv
+    : /fault|error|critical|emergency|urgent|serious|major|failure/.test(lv) ? "fault"
+    : /info|tip|notice|prompt|hint|minor/.test(lv) ? "info" : "warning";
+  const start = isoFromAny(o.start);
+  const end = isoFromAny(o.end);
+  return {
+    ext_id: String(o.ext_id ?? ""),
+    code: String(o.code ?? o.message ?? "").slice(0, 80),
+    message: String(o.message || o.code || "Cảnh báo").slice(0, 300),
+    level,
+    device_sn: o.device_sn ? String(o.device_sn) : null,
+    advice: o.advice ? String(o.advice).slice(0, 500) : null,
+    start_at: start,
+    end_at: end,
+    active: o.active === undefined ? !end : !!o.active,
+  };
+}

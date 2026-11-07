@@ -1,6 +1,6 @@
 // Deye Cloud OpenAPI v1.0 — tạo app tại developer.deyecloud.com để lấy appId/appSecret
 import { sha256Hex } from "../crypto.js";
-import { fetchJson, station, num, isoFromAny, vnDate, statusFromTime } from "./util.js";
+import { fetchJson, station, num, isoFromAny, vnDate, statusFromTime, alarm } from "./util.js";
 
 const base = (c) => (c.api_url || "https://eu1-developer.deyecloud.com/v1.0").replace(/\/$/, "");
 
@@ -275,5 +275,29 @@ export default {
       return order(creds, token, "/order/sys/tou/update", { deviceSn: sn, timeUseSettingItems: items });
     }
     throw new Error("Cài đặt này chưa hỗ trợ qua Deye Cloud");
+  },
+
+  // MỚI (07/11/2026): cảnh báo/lỗi của trạm giống tab "Cảnh báo" trên Deye Cloud — POST /station/alertList (giây, 7 ngày gần nhất)
+  async fetchAlarms(creds, cached, stationIds) {
+    const { token, fresh } = await getToken(creds, cached);
+    const end = Math.floor(Date.now() / 1000), start = end - 7 * 86400;
+    const out = [];
+    for (const id of stationIds) {
+      for (let page = 1; page <= 5; page++) {
+        const r = await post(creds, token, "/station/alertList", { stationId: Number(id), startTimestamp: start, endTimestamp: end, page, size: 50 });
+        const items = r.list || r.stationAlertItems || r.alertList || [];
+        for (const a of items) {
+          const name = String(a.alertName || a.alertMsg || a.alertCode || "");
+          const lv = num(a.level);
+          out.push(alarm({
+            ext_id: id, code: a.alertCode ?? a.alertId ?? name, message: name.replace(/_/g, " "),
+            level: /fault|err/i.test(name) || lv >= 3 ? "fault" : lv === 0 || /changed|notice/i.test(name) ? "info" : "warning",
+            device_sn: a.deviceSn, start: a.alertStartTime ?? a.startTime, end: num(a.alertEndTime ?? a.endTime) ? (a.alertEndTime ?? a.endTime) : null,
+          }));
+        }
+        if (items.length < 50) break;
+      }
+    }
+    return { alarms: out, token: fresh };
   },
 };

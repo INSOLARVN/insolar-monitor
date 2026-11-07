@@ -81,3 +81,13 @@ CREATE TABLE IF NOT EXISTS commands (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   finished_at TEXT
 );
+
+-- MỚI (07/11/2026): cảnh báo/lỗi đồng bộ từ cloud hãng (Worker cũng tự tạo trong ensureAlarms)
+CREATE TABLE IF NOT EXISTS alarms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, station_id INTEGER NOT NULL, account_id INTEGER, brand TEXT,
+  code TEXT, message TEXT, level TEXT,            -- fault | warning | info
+  device_sn TEXT, advice TEXT,
+  start_at TEXT, end_at TEXT, active INTEGER NOT NULL DEFAULT 1, updated_at TEXT,
+  UNIQUE(station_id, code, start_at)
+);
+CREATE INDEX IF NOT EXISTS alarms_active ON alarms(active, station_id);

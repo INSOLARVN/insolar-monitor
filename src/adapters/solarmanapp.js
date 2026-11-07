@@ -3,7 +3,7 @@
 // chỉ cần email + mật khẩu Solarman. API không công khai, Solarman có thể đổi bất cứ lúc nào.
 // Nếu web bắt captcha khi đăng nhập: dán "Token" lấy từ trình duyệt (xem help) — token sống ~60 ngày.
 import { sha256Hex } from "../crypto.js";
-import { fetchJson, station, num, isoFromAny, statusFromTime } from "./util.js";
+import { fetchJson, station, num, isoFromAny, statusFromTime, alarm } from "./util.js";
 
 const HOSTS = ["https://globalhome.solarmanpv.com", "https://home.solarmanpv.com", "https://api4home.solarmanpv.com"];
 const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
@@ -195,5 +195,32 @@ export default {
       return { points };
     });
     return { ...out, token: fresh };
+  },
+
+  // MỚI (07/11/2026): cảnh báo giống mục "Cảnh báo" trên web Solarman — POST /maintain-s/operating/alert/search theo trạm
+  async fetchAlarms(creds, cached, stationIds) {
+    const { out, fresh } = await withSession(creds, cached, async (s) => {
+      const res = [];
+      const since = Date.now() - 7 * 86400e3;
+      for (const id of stationIds) {
+        const r = await call(s, "POST", `/maintain-s/operating/alert/search?order.direction=DESC&order.property=alertTime&page=1&size=50&total=0`,
+          { deviceType: "", language: "en", level: "", startTime: "", levelList: null, plantId: Number(id) });
+        for (const a of arr(r)) {
+          const start = a.alertTime ?? a.startTime ?? a.alarmTime;
+          const end = a.recoveryTime ?? a.endTime ?? a.alertEndTime ?? null;
+          const t = isoFromAny(start);
+          if (t && new Date(t).getTime() < since && end) continue;
+          const lv = String(a.level ?? a.importance ?? a.alertLevel ?? "");
+          res.push(alarm({
+            ext_id: a.plantId ?? a.stationId ?? id, code: a.alertCode ?? a.ruleId ?? a.alertId ?? a.showName, message: a.showName || a.alertName || a.name || a.alertCode,
+            advice: a.solution || a.suggestion, level: /^2$|^3$|fault|high|serious|urgent/i.test(lv) ? "fault" : /^0$|info|low|tip/i.test(lv) ? "info" : "warning",
+            device_sn: a.deviceSn, start, end: num(end) || (end && !/^0$/.test(String(end))) ? end : null,
+            active: a.alertStatus !== undefined ? /^(0|1|ALERT|UNRECOVERED|ACTIVE)$/i.test(String(a.alertStatus)) && !num(end) : undefined,
+          }));
+        }
+      }
+      return res;
+    });
+    return { alarms: out, token: fresh };
   },
 };
