@@ -80,7 +80,7 @@ async function ensureAlarms(env) {
     UNIQUE(station_id, code, start_at))`).run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS alarms_active ON alarms(active, station_id)").run();
   await env.DB.prepare("ALTER TABLE accounts ADD COLUMN alarm_note TEXT").run().catch(() => {}); // MỚI (07/11/2026): chẩn đoán đồng bộ cảnh báo
-  // MỚI (07/11/2026): giá bán điện từng trạm (đ/kWh) để tính tiền khai thác; NULL = dùng giá mặc định 2.000 đ/kWh
+  // MỚI (07/11/2026): giá bán điện từng trạm (đ/kWh) để tính tiền khai thác; NULL = dùng giá mặc định 3.870 đ/kWh
   await env.DB.prepare("ALTER TABLE stations ADD COLUMN price_kwh REAL").run().catch(() => {});
   alarmsReady = true;
 }

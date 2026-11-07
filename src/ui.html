@@ -459,7 +459,7 @@ const fW = (w) => !isNum(w) ? "--" : Math.abs(w) >= 1000 ? nf(w / 1000, 2) + " k
 const fWsplit = (w) => !isNum(w) ? ["--", "W"] : Math.abs(w) >= 1000 ? [nf(w / 1000, 2), "kW"] : [String(Math.round(w)), "W"];
 const fK = (v) => (isNum(v) ? nf(v, 1) + " kWh" : "--");
 // MỚI (07/11/2026): tiền khai thác = sản lượng PV × giá điện (đ/kWh) của trạm
-const PRICE_DEF = 2000;
+const PRICE_DEF = 3870; // SỬA (07/11/2026): giá mặc định toàn bộ hệ thống theo yêu cầu chủ
 const fVnd = (v) => (!isNum(v) ? "--" : Math.abs(v) >= 1e9 ? nf(v / 1e9, 2) + " tỷ" : Math.abs(v) >= 1e6 ? nf(v / 1e6, 2) + " tr" : Math.round(v).toLocaleString("vi-VN") + " đ");
 const fV = (v) => (isNum(v) ? nf(v, 1) + "V" : "--");
 const fA = (v) => (isNum(v) ? nf(v, 1) + "A" : "--");
