@@ -190,6 +190,8 @@ let latLonReady = false;
 async function ensureLatLon(env) {
   if (latLonReady) return;
   for (const c of ["lat", "lon"]) await env.DB.prepare(`ALTER TABLE stations ADD COLUMN ${c} REAL`).run().catch(() => {});
+  // MỚI (07/11/2026): danh sách chuỗi PV đã từng phát điện (vd "1,2") → chỉ hiện PV thật đang đấu
+  await env.DB.prepare("ALTER TABLE stations ADD COLUMN pv_seen TEXT").run().catch(() => {});
   latLonReady = true;
 }
 async function weatherFor(env, st) {
@@ -217,7 +219,27 @@ async function fieldMaps(env, brand, stationId) {
   return results;
 }
 
+// MỚI (07/11/2026): cloud/profile thường trả đủ PV1…PV4 dù máy chỉ có 1–2 chuỗi được đấu.
+// Chuỗi nào từng có điện áp ≥ 50V hoặc công suất ≥ 10W thì ghi nhớ vào stations.pv_seen;
+// giao diện chỉ hiện các chuỗi đã ghi nhớ (ban đêm vẫn đúng nhờ nhớ từ ban ngày).
 async function stationDetail(env, st, ctx) {
+  const r = await stationDetailRaw(env, st, ctx);
+  const d = r.detail;
+  if (!d?.pv?.strings?.length) return r;
+  try {
+    const row = await env.DB.prepare("SELECT pv_seen FROM stations WHERE id=?1").bind(st.id).first();
+    const old = String(row?.pv_seen || "").split(",").filter(Boolean).map(Number);
+    const seen = new Set(old);
+    for (const x of d.pv.strings) if ((isNum(x.v) && x.v >= 50) || (isNum(x.w) && x.w >= 10) || (isNum(x.a) && x.a >= 0.3)) seen.add(x.n);
+    const list = [...seen].sort((a, b) => a - b);
+    if (list.length && list.join(",") !== old.join(",")) ctx.waitUntil(env.DB.prepare("UPDATE stations SET pv_seen=?2 WHERE id=?1").bind(st.id, list.join(",")).run());
+    if (list.length) d.pv.strings = d.pv.strings.filter((x) => seen.has(x.n));
+    d.pv.strings_all = !list.length; // chưa từng thấy chuỗi nào phát (trạm mới, đang đêm) → tạm hiện đủ
+  } catch {}
+  return r;
+}
+
+async function stationDetailRaw(env, st, ctx) {
   if (st.gateway_id) {
     const r = await hub(env, st.gateway_id).fetch("https://hub/live");
     const live = await r.json();
