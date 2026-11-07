@@ -301,13 +301,17 @@ function make(biz) {
   },
 
   // MỚI (07/11/2026): cảnh báo giống mục "Cảnh báo" trên web Solarman — POST /maintain-s/operating/alert/search theo trạm
-  async fetchAlarms(creds, cached, stationIds) {
+  async fetchAlarms(creds, cached, stationIds, diag = []) {
     const { out, fresh } = await W(creds, cached, async (s) => {
       const res = [];
       const since = Date.now() - 7 * 86400e3;
       for (const id of stationIds) {
-        const r = await call(s, "POST", `/maintain-s/operating/alert/search?order.direction=DESC&order.property=alertTime&page=1&size=50&total=0`,
-          { deviceType: "", language: "en", level: "", startTime: "", levelList: null, plantId: Number(id) });
+        let r;
+        try {
+          r = await call(s, "POST", `/maintain-s/operating/alert/search?order.direction=DESC&order.property=alertTime&page=1&size=50&total=0`,
+            { deviceType: "", language: "en", level: "", startTime: "", levelList: null, plantId: Number(id) });
+        } catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 160)}`); continue; }
+        if (diag.length < 3) diag.push(`${id}: ${arr(r).length} mục, khoá [${Object.keys(r || {}).join(",")}]${arr(r)[0] ? " mẫu " + JSON.stringify(arr(r)[0]).slice(0, 300) : ""}`);
         for (const a of arr(r)) {
           const start = a.alertTime ?? a.startTime ?? a.alarmTime;
           const end = a.recoveryTime ?? a.endTime ?? a.alertEndTime ?? null;

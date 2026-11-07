@@ -191,12 +191,15 @@ export default {
 
   // MỚI (07/11/2026): cảnh báo giống mục "Cảnh báo" trên SolisCloud — /v1/api/alarmList theo trạm, 7 ngày gần nhất.
   // alarmLevel: 1 nhắc nhở, 2 thường, 3 khẩn cấp; state: 0 chưa xử lý, 1 đã xử lý, 2 đã tự hết
-  async fetchAlarms(creds, _cached, stationIds) {
+  async fetchAlarms(creds, _cached, stationIds, diag = []) {
     const day = (k) => new Date(Date.now() + 7 * 3600e3 - k * 86400e3).toISOString().slice(0, 10);
     const out = [];
     for (const id of stationIds) {
-      const data = await call(creds, "/v1/api/alarmList", { pageNo: 1, pageSize: 100, stationId: String(id), alarmBeginTime: day(7), alarmEndTime: day(0) });
+      let data;
+      try { data = await call(creds, "/v1/api/alarmList", { pageNo: 1, pageSize: 100, stationId: String(id), alarmBeginTime: day(7), alarmEndTime: day(0) }); }
+      catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 160)}`); continue; }
       const recs = data?.records || data?.page?.records || [];
+      if (diag.length < 3) diag.push(`${id}: ${recs.length} mục${recs[0] ? " mẫu " + JSON.stringify(recs[0]).slice(0, 300) : ""}`);
       for (const a of recs) {
         const lv = num(a.alarmLevel);
         out.push(alarm({

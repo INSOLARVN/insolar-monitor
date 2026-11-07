@@ -278,14 +278,17 @@ export default {
   },
 
   // MỚI (07/11/2026): cảnh báo/lỗi của trạm giống tab "Cảnh báo" trên Deye Cloud — POST /station/alertList (giây, 7 ngày gần nhất)
-  async fetchAlarms(creds, cached, stationIds) {
+  // SỬA (07/11/2026): lỗi từng trạm không làm hỏng cả lượt; ghi chẩn đoán (diag) để biết vì sao rỗng
+  async fetchAlarms(creds, cached, stationIds, diag = []) {
     const { token, fresh } = await getToken(creds, cached);
     const end = Math.floor(Date.now() / 1000), start = end - 7 * 86400;
     const out = [];
     for (const id of stationIds) {
+      try {
       for (let page = 1; page <= 5; page++) {
         const r = await post(creds, token, "/station/alertList", { stationId: Number(id), startTimestamp: start, endTimestamp: end, page, size: 50 });
-        const items = r.list || r.stationAlertItems || r.alertList || [];
+        const items = r.list || r.stationAlertItems || r.alertList || r.alertListItems || r.items || [];
+        if (diag.length < 3) diag.push(`${id}: ${items.length} mục, khoá [${Object.keys(r).join(",")}]${items[0] ? " mẫu " + JSON.stringify(items[0]).slice(0, 300) : ""}`);
         for (const a of items) {
           const name = String(a.alertName || a.alertMsg || a.alertCode || "");
           const lv = num(a.level);
@@ -297,6 +300,7 @@ export default {
         }
         if (items.length < 50) break;
       }
+      } catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 160)}`); }
     }
     return { alarms: out, token: fresh };
   },

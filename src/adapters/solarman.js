@@ -104,12 +104,13 @@ export default {
   },
 
   // MỚI (07/11/2026): cảnh báo theo thiết bị — /device/v1.0/alertList (giây, 7 ngày)
-  async fetchAlarms(creds, cached, stationIds) {
+  async fetchAlarms(creds, cached, stationIds, diag = []) {
     const { token, fresh } = await getToken(creds, cached);
     const end = Math.floor(Date.now() / 1000), start = end - 7 * 86400;
     const out = [];
     for (const id of stationIds) {
-      const dev = await post(creds, token, "/station/v1.0/device", { stationId: Number(id) });
+      let dev;
+      try { dev = await post(creds, token, "/station/v1.0/device", { stationId: Number(id) }); } catch (e) { diag.push(`${id}: ${String(e.message || e).slice(0, 160)}`); continue; }
       for (const d of (dev.deviceListItems || []).filter((x) => /INVERTER/i.test(x.deviceType || "")).slice(0, 5)) {
         const r = await post(creds, token, "/device/v1.0/alertList", { deviceSn: d.deviceSn, startTimestamp: start, endTimestamp: end, page: 1, size: 50 });
         for (const a of r.alertList || r.list || []) {

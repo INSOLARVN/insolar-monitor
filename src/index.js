@@ -79,6 +79,7 @@ async function ensureAlarms(env) {
     start_at TEXT, end_at TEXT, active INTEGER NOT NULL DEFAULT 1, updated_at TEXT,
     UNIQUE(station_id, code, start_at))`).run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS alarms_active ON alarms(active, station_id)").run();
+  await env.DB.prepare("ALTER TABLE accounts ADD COLUMN alarm_note TEXT").run().catch(() => {}); // MỚI (07/11/2026): chẩn đoán đồng bộ cảnh báo
   alarmsReady = true;
 }
 const ALARM_MAX_STATIONS = 60; // giới hạn số trạm/lượt để không vượt số request của Worker
@@ -91,7 +92,8 @@ async function syncAlarms(env, acc, creds, token) {
   if (!sts.length) return { ok: true, count: 0 };
   const byExt = new Map(sts.map((x) => [String(x.ext_id), x.id]));
   try {
-    const r = await ad.fetchAlarms(creds, token, sts.slice(0, ALARM_MAX_STATIONS).map((x) => x.ext_id));
+    const diag = [];
+    const r = await ad.fetchAlarms(creds, token, sts.slice(0, ALARM_MAX_STATIONS).map((x) => x.ext_id), diag);
     const now = new Date().toISOString();
     // Đánh dấu hết toàn bộ cảnh báo đang mở của tài khoản rồi bật lại những cái cloud còn trả về
     const stmts = [env.DB.prepare("UPDATE alarms SET active=0, end_at=COALESCE(end_at, ?2), updated_at=?2 WHERE account_id=?1 AND active=1").bind(acc.id, now)];
@@ -111,9 +113,12 @@ async function syncAlarms(env, acc, creds, token) {
     stmts.push(env.DB.prepare("DELETE FROM alarms WHERE active=0 AND COALESCE(end_at, updated_at) < ?1").bind(new Date(Date.now() - 90 * 86400e3).toISOString()));
     for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));
     if (r.token) await env.DB.prepare("UPDATE accounts SET token_enc=?2 WHERE id=?1").bind(acc.id, await encrypt(env.ENC_KEY, r.token)).run();
+    await env.DB.prepare("UPDATE accounts SET alarm_note=?2 WHERE id=?1").bind(acc.id, `${now} · ${n} cảnh báo · ${diag.join(" | ")}`.slice(0, 2000)).run();
     return { ok: true, count: n };
   } catch (e) {
-    return { ok: false, error: String(e.message || e).slice(0, 300) };
+    const msg = String(e.message || e).slice(0, 300);
+    await env.DB.prepare("UPDATE accounts SET alarm_note=?2 WHERE id=?1").bind(acc.id, `${new Date().toISOString()} · LỖI ${msg}`).run().catch(() => {});
+    return { ok: false, error: msg };
   }
 }
 

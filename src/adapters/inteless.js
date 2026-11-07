@@ -300,21 +300,24 @@ export default {
   },
 
   // MỚI (07/11/2026): sự kiện/lỗi đang có của biến tần — GET api/v1/event/{sn}/realtime (giống tab Sự kiện trên PV Pro / Sunsynk)
-  async fetchAlarms(creds, cached, plantIds) {
+  async fetchAlarms(creds, cached, plantIds, diag = []) {
     const { token, host, fresh } = await getToken(creds, cached);
     const want = new Set(plantIds.map(String));
     const invs = (await inverters(host, token)).filter((x) => want.has(String(x.plant?.id)));
     const out = [];
     for (const inv of invs.slice(0, 40)) {
       let list = [];
-      try { list = (await get(host, token, `api/v1/event/${inv.sn}/realtime`, { lan: "en" })) || []; } catch { continue; }
+      try { list = (await get(host, token, `api/v1/event/${inv.sn}/realtime`, { lan: "en" })) || []; } catch (e) { diag.push(`${inv.sn}: ${String(e.message || e).slice(0, 160)}`); continue; }
+      if (diag.length < 3) diag.push(`${inv.sn}: ${[].concat(list).length} mục${[].concat(list)[0] ? " mẫu " + JSON.stringify([].concat(list)[0]).slice(0, 300) : ""}`);
       for (const e of [].concat(list)) {
         const msg = e.eventDescription || e.description || e.msg || e.content || e.eventName || e.name || e.eventCode || e.code;
         const kind = String(e.eventType ?? e.type ?? e.level ?? "");
         out.push(alarm({
           ext_id: inv.plant?.id, code: e.eventCode ?? e.code ?? msg, message: msg,
           level: /fault|err|protect|^3$/i.test(kind + " " + msg) ? "fault" : /info|^1$/i.test(kind) ? "info" : "warning",
-          device_sn: inv.sn, start: e.createAt || e.eventTime || e.time || e.startTime || null, active: true,
+          // SỬA (07/11/2026): API trả cả sự kiện cũ (không có giờ kết thúc) → chỉ coi là đang xảy ra nếu trong 2 giờ gần nhất
+          device_sn: inv.sn, start: e.createAt || e.eventTime || e.time || e.startTime || null,
+          active: (() => { const t = isoFromAny(e.createAt || e.eventTime || e.time || e.startTime); return !t || Date.now() - new Date(t).getTime() < 2 * 3600e3; })(),
         }));
       }
     }
