@@ -173,26 +173,39 @@ a{color:inherit;text-decoration:none}
 /* ---------- 4 thẻ ---------- */
 .quad{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
 @media (min-width:700px){.quad{grid-template-columns:repeat(4,minmax(0,1fr))}}
-.qc{border-radius:20px;padding:12px 12px 10px;min-width:0}
-.qc .hd{display:flex;align-items:center;gap:7px;font-weight:700;font-size:13.5px;line-height:1.2}
-.qc .ic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;flex:none;box-shadow:inset 0 1px 0 var(--hi)}
-.qc .ic svg{width:17px;height:17px}
-.qc .big{font-size:24px;font-weight:800;text-align:center;margin:8px 0 6px;letter-spacing:-.02em}
-.qc .big small{font-size:13.5px;font-weight:600;margin-left:2px;color:var(--muted)}
-.kv{display:flex;flex-direction:column;border-top:1px solid var(--line);padding-top:4px}
-.kv div{padding:4px 0;border-bottom:1px dashed var(--line);min-width:0}
+.qc{border-radius:18px;padding:10px 10px 8px;min-width:0}
+/* SỬA (07/11/2026): thu nhỏ chữ/số 4 thẻ cho bằng nhãn trong sơ đồ, nhãn + giá trị cùng 1 dòng → trang ngắn hơn */
+.qc .hd{display:flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px;line-height:1.2}
+.qc .ic{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;flex:none;box-shadow:inset 0 1px 0 var(--hi)}
+.qc .ic svg{width:15px;height:15px}
+.qc .big{font-size:18px;font-weight:800;text-align:center;margin:4px 0 4px;letter-spacing:-.02em}
+.qc .big small{font-size:11.5px;font-weight:600;margin-left:2px;color:var(--muted)}
+.kv{display:flex;flex-direction:column;border-top:1px solid var(--line);padding-top:2px}
+.kv div{display:flex;justify-content:space-between;align-items:baseline;gap:6px;padding:3px 0;border-bottom:1px dashed var(--line);min-width:0}
 .kv div:last-child{border-bottom:0}
-.kv span{display:block;color:var(--muted);font-size:12px}
-.kv b{display:block;text-align:right;font-weight:700;font-size:13.5px;overflow-wrap:anywhere}
+.kv span{color:var(--muted);font-size:10.5px;flex:none;white-space:nowrap}
+.kv b{text-align:right;font-weight:700;font-size:11.5px;overflow-wrap:anywhere;min-width:0}
 .cv{color:var(--v)} .cw{color:var(--w)} .ce{color:var(--e)} .cg{color:var(--bat)}
 .gauges{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;text-align:center}
-.gauge svg{width:100%;max-width:92px;height:auto}
-.gauge .lb{font-weight:600;font-size:13px;margin-top:2px}
+.gauge svg{width:100%;max-width:72px;height:auto}
+.gauge .lb{font-weight:600;font-size:11px;margin-top:0}
 .estrip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 @media (min-width:600px){.estrip{grid-template-columns:repeat(6,minmax(0,1fr))}}
-.echip{background:var(--card2);border-radius:14px;padding:9px 10px;border:1px solid var(--line)}
-.echip span{display:block;font-size:12px;color:var(--muted)}
-.echip b{font-size:16px;font-weight:800}
+.echip{background:var(--card2);border-radius:12px;padding:6px 8px;border:1px solid var(--line)}
+.echip span{display:block;font-size:10.5px;color:var(--muted)}
+.echip b{font-size:13.5px;font-weight:800}
+.echip small{font-size:10px}
+.estrip.rev{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.estrip.rev .echip{padding:6px}
+.estrip.rev b{font-size:12.5px;white-space:nowrap}
+.ov .card{padding:12px}
+.ov .card h3{font-size:13.5px;margin:0 0 8px}
+.ov .quad{gap:8px;margin-top:10px}
+.ov .mt{margin-top:10px}
+.ov .prow{padding:5px 0;font-size:12px}
+#sv>.ov~.card{padding:12px;margin-top:10px}
+#sv>.ov~.card h3{font-size:13.5px;margin:0 0 6px}
+#sv>.ov~.card .alrow,#sv>.ov~.card p{font-size:12px}
 /* ---------- thanh tab kính + gạch sáng trượt ---------- */
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:25;transform:translate3d(0,0,0);-webkit-transform:translate3d(0,0,0);backface-visibility:hidden;-webkit-backface-visibility:hidden;will-change:transform;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));pointer-events:none}
 .tabbar .wrap{pointer-events:auto}
@@ -445,6 +458,9 @@ const nf = (v, d = 1) => (isNum(v) ? v.toLocaleString("vi-VN", { maximumFraction
 const fW = (w) => !isNum(w) ? "--" : Math.abs(w) >= 1000 ? nf(w / 1000, 2) + " kW" : Math.round(w) + " W";
 const fWsplit = (w) => !isNum(w) ? ["--", "W"] : Math.abs(w) >= 1000 ? [nf(w / 1000, 2), "kW"] : [String(Math.round(w)), "W"];
 const fK = (v) => (isNum(v) ? nf(v, 1) + " kWh" : "--");
+// MỚI (07/11/2026): tiền khai thác = sản lượng PV × giá điện (đ/kWh) của trạm
+const PRICE_DEF = 2000;
+const fVnd = (v) => (!isNum(v) ? "--" : Math.abs(v) >= 1e9 ? nf(v / 1e9, 2) + " tỷ" : Math.abs(v) >= 1e6 ? nf(v / 1e6, 2) + " tr" : Math.round(v).toLocaleString("vi-VN") + " đ");
 const fV = (v) => (isNum(v) ? nf(v, 1) + "V" : "--");
 const fA = (v) => (isNum(v) ? nf(v, 1) + "A" : "--");
 const ago = (iso) => {
@@ -897,8 +913,17 @@ async function renderList() {
   setTabs(TOP_TABS, "#/");
   app.innerHTML = `<div class="page">${header("INSOLAR Monitor", `<span class="pill">${ico("bolt", 'style="width:14px;height:14px;color:var(--sun)"')} Toàn bộ hệ thống</span>`,
     themeBtn(), `<span style="display:inline-flex;gap:8px"><a class="icobtn" href="#/alarms" aria-label="Cảnh báo" id="bAl">${ico("alert")}</a><button class="icobtn" id="bSync" aria-label="Đồng bộ">${ico("refresh")}</button></span>`)}
-    <div class="wrap ${viewCls("top", 0)}" style="padding-top:12px"><div id="lv"><div class="spin"></div></div>
+    <div class="wrap ${viewCls("top", 0)}" style="padding-top:12px"><div id="lvH"></div>
+    <div class="search"><input id="q" placeholder="Tìm trạm, khách hàng, số điện thoại…" value="${esc(F.q)}" aria-label="Tìm kiếm" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div id="lv"><div class="spin"></div></div>
     <div class="foot"><button class="btn" id="bLogout">${ico("out")} Đăng xuất</button></div></div></div>`;
+  // SỬA (07/11/2026): ô tìm kiếm nằm ngoài vùng vẽ lại → không mất bàn phím / không phá bộ gõ tiếng Việt (Telex) khi gõ;
+  // chỉ lọc lại danh sách, chờ 150 ms sau phím cuối, bỏ qua lúc đang ghép dấu
+  const qi = $("#q"); let qt = 0, comp = false;
+  const run = () => { clearTimeout(qt); qt = setTimeout(() => { F.q = qi.value; drawList(true); }, 150); };
+  qi.addEventListener("compositionstart", () => (comp = true));
+  qi.addEventListener("compositionend", () => { comp = false; run(); });
+  qi.addEventListener("input", () => { if (!comp) run(); });
   $("#bLogout").onclick = async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); go("#/login"); };
   $("#bSync").onclick = async () => { toast("Đang đồng bộ tất cả…"); await api("/api/sync-all", { method: "POST" }); setTimeout(loadList, 6000); };
   await loadList();
@@ -908,29 +933,32 @@ async function loadList() {
   try { S.stations = await api("/api/stations"); } catch { return; }
   drawList();
 }
-function drawList() {
-  const L = S.stations, el = $("#lv");
-  if (!el) return;
+const fold = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase(); // MỚI (07/11/2026): tìm không phân biệt dấu
+function drawList(onlyList) {
+  const L = S.stations, el = $("#lv"), eh = $("#lvH");
+  if (!el || !eh) return;
   const LB = L.filter((s) => !F.brand || brandKey(s) === F.brand);
   const sum = (k) => LB.reduce((a, s) => a + (Number(s[k]) || 0), 0); // SỬA (07/11/2026): tổng theo hãng đang lọc
   const cnt = (st) => LB.filter((s) => stStatus(s) === st).length;
-  const q = F.q.toLowerCase();
-  const list = LB.filter((s) => (!F.status || stStatus(s) === F.status) && (!q || [s.name, s.customer, s.phone, s.address].join(" ").toLowerCase().includes(q)));
+  const q = fold(F.q).trim();
+  const list = LB.filter((s) => (!F.status || stStatus(s) === F.status) && (!q || (s._f ??= fold([s.name, s.customer, s.phone, s.address, s.ext_id].join(" "))).includes(q)));
+  const listHtml = `<div class="slist">${list.length ? list.slice(0, S.listN || 40).map(stationCard).join("") + (list.length > (S.listN || 40) ? `<button class="btn full mt" id="bMore">Xem thêm ${list.length - (S.listN || 40)} trạm</button>` : "") : `<div class="empty">${L.length ? "Không có trạm phù hợp." : "Chưa có trạm nào.<br>Thêm <b>Gateway INSOLAR</b> hoặc kết nối <b>Cloud hãng</b> ở thanh dưới."}</div>`}</div>`;
+  const bindMore = () => { const m = $("#bMore"); if (m) m.onclick = () => { S.listN = (S.listN || 40) + 60; drawList(true); }; };
+  const sl = el.querySelector(".slist");
+  if (onlyList && sl) { sl.outerHTML = listHtml; bindMore(); return; }
   const brands = [...L.reduce((m, s) => m.set(brandKey(s), (m.get(brandKey(s)) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
   if (F.brand && !brands.some(([k]) => k === F.brand)) F.brand = "";
   const alN = L.reduce((t, s) => t + (s.alarm_count || 0), 0);
   const bA = $("#bAl"); if (bA) bA.innerHTML = ico("alert") + (alN ? `<span class="badge">${alN > 99 ? "99+" : alN}</span>` : "");
   const [pv, pvu] = fWsplit(sum("pv_power_w"));
-  el.innerHTML = `
-  <div class="hero"><svg class="sunart" viewBox="0 0 100 100"><circle cx="50" cy="50" r="22" fill="#fff"/>${[...Array(12)].map((_, i) => `<rect x="48" y="4" width="4" height="16" rx="2" fill="#fff" transform="rotate(${i * 30} 50 50)"/>`).join("")}</svg>
+  eh.innerHTML = `<div class="hero"><svg class="sunart" viewBox="0 0 100 100"><circle cx="50" cy="50" r="22" fill="#fff"/>${[...Array(12)].map((_, i) => `<rect x="48" y="4" width="4" height="16" rx="2" fill="#fff" transform="rotate(${i * 30} 50 50)"/>`).join("")}</svg>
     <div class="lbl">Công suất phát hiện tại</div><div class="val">${pv} <span style="font-size:20px">${pvu}</span></div>
-    <div class="row"><div><span>Hôm nay</span><b>${nf(sum("today_kwh"), 1)} kWh</b></div><div><span>Lắp đặt</span><b>${nf(sum("capacity_kwp"), 1)} kWp</b></div><div><span>Trạm</span><b>${LB.length}</b></div></div></div>
-  <div class="search"><input id="q" placeholder="Tìm trạm, khách hàng, số điện thoại…" value="${esc(F.q)}" aria-label="Tìm kiếm"></div>
-  ${brands.length > 1 ? `<div class="chips brands" aria-label="Lọc theo hãng">${[["", L.length], ...brands].map(([k, n]) => `<button class="chip ${F.brand === k ? "on" : ""}" data-b="${esc(k)}">${esc(k === "" ? "Mọi hãng" : k)} · ${n}</button>`).join("")}</div>` : ""}
+    <div class="row"><div><span>Hôm nay</span><b>${nf(sum("today_kwh"), 1)} kWh</b></div><div><span>Lắp đặt</span><b>${nf(sum("capacity_kwp"), 1)} kWp</b></div><div><span>Trạm</span><b>${LB.length}</b></div></div></div>`;
+  el.innerHTML = `  ${brands.length > 1 ? `<div class="chips brands" aria-label="Lọc theo hãng">${[["", L.length], ...brands].map(([k, n]) => `<button class="chip ${F.brand === k ? "on" : ""}" data-b="${esc(k)}">${esc(k === "" ? "Mọi hãng" : k)} · ${n}</button>`).join("")}</div>` : ""}
   <div class="chips">${[["", "Tất cả", LB.length], ["online", "Trực tuyến", cnt("online")], ["offline", "Ngoại tuyến", cnt("offline")], ["alarm", "Cảnh báo", cnt("alarm")]]
     .map(([k, t, n]) => `<button class="chip ${F.status === k ? "on" : ""}" data-s="${k}">${t} · ${n}</button>`).join("")}</div>
-  <div class="slist">${list.length ? list.map(stationCard).join("") : `<div class="empty">${L.length ? "Không có trạm phù hợp." : "Chưa có trạm nào.<br>Thêm <b>Gateway INSOLAR</b> hoặc kết nối <b>Cloud hãng</b> ở thanh dưới."}</div>`}</div>`;
-  $("#q").oninput = (e) => { F.q = e.target.value; const pos = e.target.selectionStart; drawList(); const i = $("#q"); i.focus(); i.setSelectionRange(pos, pos); };
+  ${listHtml}`;
+  bindMore();
   el.querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => { F.status = b.dataset.s; drawList(); }));
   el.querySelectorAll("[data-b]").forEach((b) => (b.onclick = () => { F.brand = b.dataset.b; drawList(); }));
 }
@@ -1020,7 +1048,7 @@ async function loadDetail() {
   const path = SHARE ? `/api/public/${SHARE}` : `/api/stations/${S.st.id}/detail`;
   const r = await api(path);
   if (SHARE && r.station) S.st = r.station;
-  S.detail = r.detail; S.online = r.online; S.detailErr = r.error || null; S.weather = r.weather ?? null;
+  S.detail = r.detail; S.online = r.online; S.detailErr = r.error || null; S.weather = r.weather ?? null; S.energy = r.energy ?? null;
   return r;
 }
 function liveRefresh(fn, ms) {
@@ -1317,6 +1345,30 @@ function phaseRows(phases, label) {
   if (!phases?.length) return [[label, "--"]];
   return phases.map((p) => [`${label}${phases.length > 1 ? " L" + p.l : ""}`, `${fV(p.v)} / ${fA(p.a)}`, "cv"]);
 }
+function revenueHtml(d) {
+  const st = S.st || {}, E = S.energy || {};
+  const price = isNum(st.price_kwh) ? st.price_kwh : PRICE_DEF;
+  const today = isNum(d.pv.today_kwh) ? d.pv.today_kwh : E.today;
+  const month = isNum(E.month) || isNum(today) ? Math.max(E.month || 0, today || 0) : null; // dữ liệu lưu chưa đủ tháng thì ít nhất bằng hôm nay
+  const year = isNum(E.year) || isNum(month) ? Math.max(E.year || 0, month || 0) : null;
+  const total = isNum(d.pv.total_kwh) ? d.pv.total_kwh : E.total;
+  const c = (t, k) => `<div class="echip"><span>${t}</span><b class="ce">${fVnd(isNum(k) ? k * price : null)}</b><small class="muted" style="display:block">${fK(k)}</small></div>`;
+  return `<div class="card mt wide"><h3>${ico("chart", 'style="width:18px;height:18px;color:var(--e)"')} Tiền khai thác
+    ${SHARE ? `<span class="tag">${nf(price, 0)} đ/kWh</span>` : `<button class="tag" id="bPrice" style="cursor:pointer;border:0;font:inherit;font-size:11px">${nf(price, 0)} đ/kWh${isNum(st.price_kwh) ? "" : " (mặc định)"} ✎</button>`}</h3>
+    <div class="estrip rev">${c("Hôm nay", today)}${c("Tháng này", month)}${c("Năm nay", year)}${c("Tổng", total)}</div></div>`;
+}
+function priceSheet() {
+  const s = S.st;
+  openSheet(`<h2>Giá điện tính tiền khai thác</h2>
+    <div class="field"><label for="p_v">Giá (đ/kWh)</label><input class="inp" id="p_v" inputmode="decimal" placeholder="${PRICE_DEF}" value="${esc(s.price_kwh ?? "")}"></div>
+    <p class="small muted" style="margin:0 0 8px">Tiền = sản lượng PV × giá. Để trống dùng mặc định ${nf(PRICE_DEF, 0)} đ/kWh. Tháng/năm cộng từ dữ liệu app đã lưu.</p>
+    <div class="row2 mt"><button class="btn" id="p_x">Đóng</button><button class="btn pri" id="p_s">Lưu</button></div>`);
+  $("#p_x").onclick = closeSheet;
+  $("#p_s").onclick = async () => {
+    const v = $("#p_v").value.trim().replace(/\./g, "").replace(",", ".");
+    try { await api(`/api/stations/${s.id}`, { method: "PATCH", body: JSON.stringify({ price_kwh: v }) }); s.price_kwh = v === "" ? null : Number(v); closeSheet(); window.__insRedraw?.(); toast("Đã lưu giá"); } catch (e) { toast(e.message); }
+  };
+}
 function overviewHtml(d, status) {
   const pvRows = d.pv.strings.map((s) => [`PV${s.n}`, `${fV(s.v)} · ${fA(s.a)} · ${isNum(s.w) ? Math.round(s.w) + "W" : "--"}`, "cv"]);
   const gp = d.grid.power;
@@ -1341,6 +1393,7 @@ function overviewHtml(d, status) {
     ${ring(bp, Math.max(3000, (d.battery.discharge_limit || 100) * 50), "var(--sun)", fW(bp).replace(" ", ""), bp > 0 ? "xả" : bp < 0 ? "sạc" : "", "Công suất")}
     ${ring(d.battery.current, d.battery.discharge_limit || 150, "var(--e)", isNum(d.battery.current) ? nf(d.battery.current, 1) + "A" : "--", d.battery.discharge_limit ? "tối đa " + Math.round(d.battery.discharge_limit) + "A" : "", "Dòng")}
   </div></div>
+  ${revenueHtml(d)}
   <div class="card mt wide"><h3>Năng lượng hôm nay</h3><div class="estrip">
     <div class="echip"><span>Sản xuất</span><b class="ce">${nf(d.pv.today_kwh, 1)}</b> <small class="muted">kWh</small></div>
     <div class="echip"><span>Tiêu thụ</span><b style="color:var(--home)">${nf(d.load.today_kwh, 1)}</b> <small class="muted">kWh</small></div>
@@ -1360,6 +1413,7 @@ async function viewOverview() {
     const el = $("#sv"); if (!el) return;
     if (!S.detail) { el.innerHTML = `<div class="empty">Chưa có dữ liệu chi tiết.${S.detailErr ? "<br><small>" + esc(S.detailErr) + "</small>" : ""}<br>${S.st?.gateway_id ? "Gateway chưa gửi dữ liệu lần nào." : ""}</div>`; return; }
     el.innerHTML = overviewHtml(S.detail, S.online === false ? "offline" : S.st.status) + stationAlarmsHtml();
+    const bp = $("#bPrice"); if (bp) bp.onclick = priceSheet;
     drawStationHeader(S.st, S.st.id);
   };
   // MỚI (07/11/2026): cảnh báo/lỗi của trạm lấy từ cloud hãng
@@ -1497,10 +1551,10 @@ async function viewInverter() {
     const ph = (title, arr, extra = "") => arr?.length ? `<div class="card mt"><h3>${title}</h3><div class="scrollx"><table class="tbl"><tr><th>Pha</th><th>Điện áp</th><th>Dòng</th><th>Công suất</th></tr>
       ${arr.map((p) => `<tr><td><b>L${p.l}</b></td><td class="cv">${fV(p.v)}</td><td class="cv">${fA(p.a)}</td><td class="cw">${fW(p.w)}</td></tr>`).join("")}</table></div>${extra}</div>` : "";
     const groups = {};
-    const q = S.invQ.toLowerCase();
+    const q = fold(S.invQ);
     for (const p of d.params || []) {
       const nm = vi(p.name);
-      if (q && !(nm + " " + p.name).toLowerCase().includes(q)) continue;
+      if (q && !fold(nm + " " + p.name).includes(q)) continue;
       (groups[p.group] ??= []).push(p);
     }
     const fmtVal = (p) => {
@@ -1538,7 +1592,10 @@ async function viewInverter() {
         <div class="row2 mt"><button class="btn" id="mread">Đọc</button><button class="btn dan" id="mwrite">Ghi…</button></div>
         <pre id="mout" class="small" style="white-space:pre-wrap;background:var(--card2);border-radius:12px;padding:10px;margin-top:10px;min-height:40px"></pre></div></details>` : ""}`;
     const iq = $("#iq");
-    iq.oninput = () => { S.invQ = iq.value; const pos = iq.selectionStart; draw(); const n = $("#iq"); n.focus(); n.setSelectionRange(pos, pos); };
+    let ic = false; // SỬA (07/11/2026): bỏ qua lúc bộ gõ tiếng Việt đang ghép dấu
+    iq.addEventListener("compositionstart", () => (ic = true));
+    iq.addEventListener("compositionend", () => { ic = false; iq.dispatchEvent(new Event("input")); });
+    iq.oninput = () => { if (ic) return; S.invQ = iq.value; const pos = iq.selectionStart; draw(); const n = $("#iq"); n.focus(); n.setSelectionRange(pos, pos); };
     const mr = $("#mread");
     if (mr) {
       mr.onclick = async () => {
