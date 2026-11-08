@@ -282,8 +282,13 @@ const CLOUD_MAP = [
   [/^grid current l3$/i, (d, v) => (ph(d.grid, 3).a = v)],
   [/^ac output frequency|^grid frequency$|^ac frequency$/i, (d, v) => (d.grid.freq = v)],
   [/^total grid power$|^grid power$|^grid total power$/i, (d, v) => (d.grid.power = v)],
-  [/^daily energy (bought|purchased)$|^today('s)? (energy )?(purchased|bought)/i, (d, v) => (d.grid.today_import = v)],
-  [/^daily (grid feed-in|energy sold)$|^today('s)? (energy )?(sold|feed-in)/i, (d, v) => (d.grid.today_export = v)],
+  // SỬA (08/11/2026): dữ liệu thật Solarman SRNE / Deye: "Daily Energy Buy", "Daily energy sell", "Total Energy Buy/Sell"
+  [/^daily energy (bought|purchased|buy)$|^today('s)? (energy )?(purchased|bought)/i, (d, v) => (d.grid.today_import = v)],
+  [/^daily (grid feed-in|energy sold|energy sell)$|^today('s)? (energy )?(sold|feed-in)/i, (d, v) => (d.grid.today_export = v)],
+  [/^total energy buy$/i, (d, v) => (d.grid.total_import = v)],
+  [/^total energy sell$/i, (d, v) => (d.grid.total_export = v)],
+  [/^total consumption$/i, (d, v) => (d.load.total_kwh = v)],
+  [/^load fr?equency$|^load fequency$/i, (d, v) => (d.load.freq = v)],
   [/^total consumption power$|^load power$|^total load power$|^consumption power$/i, (d, v) => (d.load.power = v)],
   [/^daily consumption$|^today('s)? consumption$|^daily load consumption$/i, (d, v) => (d.load.today_kwh = v)],
   [/^load voltage l1$/i, (d, v) => (ph(d.load, 1).v = v)],
@@ -399,7 +404,8 @@ export function fromCloudList(list, source, extra = {}, maps = null) {
   const d = emptyDetail();
   d.device = { profile: source, ...extra };
   for (const it of list || []) {
-    const name = String(it.name || it.key || "").trim();
+    // SỬA (08/11/2026): Solarman SRNE trả "Load Voltage  L1", "Load  Power L1" (2 dấu cách) → gộp khoảng trắng trước khi so tên
+    const name = String(it.name || it.key || "").trim().replace(/\s+/g, " ");
     const num = n(it.value);
     const val = num ?? it.value;
     for (const [re, fn] of CLOUD_MAP) {

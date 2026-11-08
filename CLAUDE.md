@@ -56,6 +56,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 12. **Dữ liệu thật Deye Cloud (INSOLAR VN 83LHP, SUN-12K 3 pha, 08/11/2026):** có `Grid Voltage/Current/Power L1–L3` (dòng lưới THẬT, có thể lớn so với công suất vì phản kháng `x Phase Reactive Power Of Power Grid`), `AC Voltage/Current RUA/SVB/TWC` (đầu ra biến tần), `Inverter Output Power L1–L3`, `Load Voltage L1–L3`, `Load Phase Power A/B/C` (tải nhà, khớp tổng), `Load Power L1–L3` (cổng UPS); **không có dòng tải từng pha, không có SOH pin 1** (`Lithium Battery2SOH` là pin 2). Đã bỏ việc ẩn dòng pha theo công suất; `fillBattery` bỏ thông số pin 2. Nút "Chép toàn bộ thông số gốc từ hãng" ở tab Biến tần để đối chiếu, khung "Số hãng trả đã bị ẩn" (`d.hidden`).
 
+13. **Dữ liệu thật Solarman Smart – SRNE 12 kW 3 pha (Tranh An, 08/11/2026):** cùng bộ tên kiểu Deye (logger Solarman): `Grid Voltage/Current/Power L1–L3` có thật, `AC Voltage/Current R/U/A…` = đầu ra biến tần, `Load phase power A/B/C` = tải nhà, `Load Voltage  L1` (2 dấu cách → gộp khoảng trắng), `Daily Energy Buy`/`Daily energy sell`, `Total Energy Buy/Sell`, `Total Consumption`, `Load Fequency` (sai chính tả của hãng), `Battery current 1`, `BMS Temperature`. **Không có:** dòng tải từng pha, SOH pin. Tệp mẫu để thử: chạy `fromCloudList` với danh sách tên/giá trị.
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.
