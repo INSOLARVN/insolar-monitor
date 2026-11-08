@@ -185,6 +185,7 @@ a{color:inherit;text-decoration:none}
 .kv div:last-child{border-bottom:0}
 .kv span{color:var(--muted);font-size:10.5px;flex:none;white-space:nowrap}
 .kv b{text-align:right;font-weight:700;font-size:11.5px;overflow-wrap:anywhere;min-width:0}
+.kv b.nw{overflow-wrap:normal}
 .cv{color:var(--v)} .cw{color:var(--w)} .ce{color:var(--e)} .cg{color:var(--bat)}
 .gauges{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;text-align:center}
 .gauge svg{width:100%;max-width:72px;height:auto}
@@ -1369,7 +1370,9 @@ function hidLabel(f) {
 function phaseRows(phases, label) {
   if (!phases?.length) return [[label, "--"]];
   // SỬA (08/11/2026): hãng có trả công suất pha (vd Deye "Load Phase Power A/B/C") thì hiện thêm
-  return phases.map((p) => [`${label}${phases.length > 1 ? " L" + p.l : ""}`, `${fV(p.v)} / ${fA(p.a)}${isNum(p.w) ? " · " + fW(p.w) : ""}`, "cv"]);
+  // SỬA (08/11/2026): nhiều pha thì nhãn chỉ "L1/L2/L3" (đơn vị V/A/W đã rõ) + khoảng trắng không ngắt trước đơn vị → không còn chữ "W" rơi xuống dòng
+  const nb = (t) => String(t).replace(/ (?=k?W$)/, "\u00a0");
+  return phases.map((p) => [phases.length > 1 ? "L" + p.l : label, `${fV(p.v)}\u00a0/ ${fA(p.a)}${isNum(p.w) ? " · " + nb(fW(p.w)) : ""}`, "cv nw"]);
 }
 function revenueHtml(d) {
   const st = S.st || {}, E = S.energy || {};
