@@ -314,7 +314,7 @@ async function cacheJson(key, ttl, fn) {
 }
 async function cloudMonthKwh(env, st, ym, ctx) {
   const r = await cloudHistory(env, st, "month", ym + "-01", ctx);
-  if (!r?.bars) return null; // lỗi → không đệm
+  if (!r?.bars?.length) return null; // SỬA (08/11/2026): lỗi hoặc hãng trả rỗng → không có số (trước cộng rỗng ra 0 kWh)
   const by = {};
   for (const b of r.bars) if (isNum(b.pv)) by[b.day || b.label] = Math.max(by[b.day || b.label] ?? 0, b.pv);
   return Math.round(Object.values(by).reduce((t, x) => t + x, 0) * 10) / 10;
@@ -327,7 +327,7 @@ async function cloudMonthKwh(env, st, ym, ctx) {
 async function cloudMonth(env, st, ctx) {
   if (!st.account_id || st.gateway_id) return null;
   const d = vnToday();
-  return cacheJson(`em3/${st.id}/${d.slice(0, 7)}/${d}-${new Date().getUTCHours()}`, 3600, () => cloudMonthKwh(env, st, d.slice(0, 7), ctx)).catch(() => null);
+  return cacheJson(`em4/${st.id}/${d.slice(0, 7)}/${d}-${new Date().getUTCHours()}`, 3600, () => cloudMonthKwh(env, st, d.slice(0, 7), ctx)).catch(() => null);
 }
 
 async function energySum(env, st, ctx) {

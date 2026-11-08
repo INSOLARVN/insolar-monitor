@@ -190,7 +190,9 @@ export default {
         load_power_w: lt.consumptionPower,
         grid_power_w: lt.gridPower ?? lt.wirePower,
         battery_soc: lt.batterySOC ?? s.batterySOC,
-        battery_power_w: num(lt.dischargePower) !== null || num(lt.chargePower) !== null ? (num(lt.dischargePower) || 0) - (num(lt.chargePower) || 0) : null,
+        // SỬA (08/11/2026): dữ liệu thật Kim Chung: station/latest chargePower = -8.557 (ÂM khi sạc), dischargePower = null, batteryPower = -8.557
+        // → trước tính "xả − sạc" = +8.557 (hiện XẢ, sai). Dùng batteryPower: âm = sạc, trùng quy ước app và "Battery Power" của thiết bị.
+        battery_power_w: num(lt.batteryPower),
         today_kwh: day.generationValue,
         total_kwh: lt.generationTotal,
         data_time: t,
@@ -206,7 +208,9 @@ export default {
     const get = async (k, path, body) => { try { res[k] = { path, data: await post(creds, token, path, body) }; } catch (e) { res[k] = { path, error: String(e.message || e) }; } };
     await get("station_latest", "/station/latest", { stationId: Number(stationId) });
     await get("station_history_day", "/station/history", { stationId: Number(stationId), granularity: 2, startAt: date, endAt: vnDate(new Date(Date.now() + 86400e3)) });
-    await get("station_history_year", "/station/history", { stationId: Number(stationId), granularity: 3, startAt: date.slice(0, 4) + "-01", endAt: (Number(date.slice(0, 4)) + 1) + "-01" });
+    const m1 = date.slice(0, 7) + "-01", nm = new Date(m1 + "T00:00:00Z"); nm.setUTCMonth(nm.getUTCMonth() + 1);
+    await get("station_history_month", "/station/history", { stationId: Number(stationId), granularity: 2, startAt: m1, endAt: nm.toISOString().slice(0, 10) });
+    await get("station_history_year", "/station/history", { stationId: Number(stationId), granularity: 3, startAt: date.slice(0, 4) + "-01", endAt: date.slice(0, 4) + "-12" });
     return { raw: res, token: fresh };
   },
 
@@ -242,7 +246,8 @@ export default {
     }
     if (range === "year") {
       const y = Number(date.slice(0, 4));
-      const h = await post(creds, token, "/station/history", { stationId: id, granularity: 3, startAt: `${y}-01`, endAt: `${y + 1}-01` });
+      // SỬA (08/11/2026): Deye báo lỗi "should be within 12 month" với 2026-01 → 2027-01 → endAt là tháng 12 cùng năm
+      const h = await post(creds, token, "/station/history", { stationId: id, granularity: 3, startAt: `${y}-01`, endAt: `${y}-12` });
       const bars = (h.stationDataItems || []).slice(0, 12).map((it, i) => bar(it, String(i + 1).padStart(2, "0")));
       return { bars, token: fresh };
     }
@@ -251,7 +256,7 @@ export default {
       const ts = isoFromAny(it.timeStamp);
       const pv = num(it.generationPower), load = num(it.consumptionPower);
       const grid = num(it.gridPower) ?? num(it.wirePower);
-      const bat = num(it.dischargePower) !== null || num(it.chargePower) !== null ? (num(it.dischargePower) || 0) - (num(it.chargePower) || 0) : num(it.batteryPower);
+      const bat = num(it.batteryPower); // SỬA (08/11/2026): như station/latest — batteryPower âm = sạc
       return { ts, pv, load, grid, bat, soc: num(it.batterySOC), today_kwh: null };
     }).filter((x) => x.ts && (x.pv !== null || x.load !== null)).sort((a, b) => (a.ts < b.ts ? -1 : 1));
     return { points, token: fresh };

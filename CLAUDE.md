@@ -62,6 +62,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 15. **Dữ liệu thật Deye 20 kW 3 pha SG05 (Kim Chung, 08/11/2026):** "Grid Status: Purchasing energy" + `Total Grid Power` +710 → Deye: lưới + = mua; `Battery Power` -1.644 + dòng âm → pin âm = sạc (trùng quy ước app). Tải hãng báo (8.592) ≠ PV+pin+lưới (7.022) → **đã BỎ tự đảo dấu theo cân bằng** (`balanceSigns`) vì đảo sai cả pin lẫn lưới. 2 cụm pin: `Battery Current1/2`, dùng `Battery Total Current`. Máy này `Grid Current L2/L3` (22,74 / 11,28 A) ≈ `AC Current SVB/TWC` (23,4 / 12,6 A) trong khi công suất lưới pha chỉ ~240 W → số của Deye, app hiện nguyên. Solarman `wirePower` âm = mua (Daikin: -1.694, `wireStatus` PURCHASE) → adapter đổi dấu. Deye `station/latest` (danh sách trạm) **chưa kiểm dấu** → xem bằng "Xem số liệu gốc từ hãng".
 
+16. **Deye `station/latest` thật (Kim Chung, 08/11/2026):** `chargePower` = `batteryPower` = -8.557 khi sạc, `dischargePower` null → dùng `batteryPower` (âm = sạc). `wirePower` -15 (quá nhỏ, **chưa xác định dấu** — cần gửi lại lúc mua/bán nhiều), `gridPower` null, không có `generationTotal`. `/station/history` granularity 2 (ngày) có `year/month/day`, `generationValue`; granularity 3 phải trong 12 tháng (`endAt` = `YYYY-12`). Lịch sử tháng trả rỗng thì tháng = "--" (không còn ra 0).
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.
