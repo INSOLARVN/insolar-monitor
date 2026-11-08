@@ -179,6 +179,15 @@ export default {
     return { stations: out, token: fresh };
   },
 
+  // MỚI (08/11/2026): số liệu gốc PV Pro của trạm (danh sách trạm + chi tiết trạm) — để kiểm công suất lắp đặt (kWp) và các trường khác
+  async rawEnergy(creds, cached, plantId) {
+    const { token, host, fresh } = await getToken(creds, cached);
+    const res = {};
+    try { res.plant_list_item = (await paged(host, token, "api/v1/plants", { name: "", status: "" })).find((p) => String(p.id) === String(plantId)) || null; } catch (e) { res.plant_list_error = String(e.message || e); }
+    try { res.plant_detail = await get(host, token, `api/v1/plant/${plantId}`, { lan: "en", id: plantId }); } catch (e) { res.plant_detail_error = String(e.message || e); }
+    return { raw: res, token: fresh };
+  },
+
   async fetchDetail(creds, cached, plantId) {
     const { token, host, fresh } = await getToken(creds, cached);
     const inv = (await inverters(host, token)).find((x) => String(x.plant?.id) === String(plantId));
