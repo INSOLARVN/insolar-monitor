@@ -320,22 +320,33 @@ async function cloudMonthKwh(env, st, ym, ctx) {
   for (const b of r.bars) if (isNum(b.pv)) by[b.day || b.label] = Math.max(by[b.day || b.label] ?? 0, b.pv);
   return Math.round(Object.values(by).reduce((t, x) => t + x, 0) * 10) / 10;
 }
+// SỬA (08/11/2026): cộng các tháng năm nay vẫn ra lớn hơn thực tế → Năm nay = Tổng − sản lượng các năm trước
+// (các năm trước cộng theo tháng, đệm 7 ngày; dừng khi gặp năm không có sản lượng = trước ngày lắp).
+async function yearKwh(env, st, y, ctx) {
+  return cacheJson(`ey4/${st.id}/${y}`, 7 * 86400, async () => {
+    const xs = await Promise.all(Array.from({ length: 12 }, (_, i) => cloudMonthKwh(env, st, `${y}-${String(i + 1).padStart(2, "0")}`, ctx).catch(() => null)));
+    if (xs.some((x) => x === null)) return null;
+    return Math.round(xs.reduce((t, x) => t + x, 0) * 10) / 10;
+  });
+}
 async function cloudYear(env, st, ctx) {
   if (!st.account_id || st.gateway_id) return null;
-  const d = vnToday(), y = d.slice(0, 4), m = Number(d.slice(5, 7));
+  const d = vnToday(), y = Number(d.slice(0, 4));
   const month = await cacheJson(`em3/${st.id}/${d.slice(0, 7)}/${d}-${new Date().getUTCHours()}`, 3600, () => cloudMonthKwh(env, st, d.slice(0, 7), ctx));
   if (!isNum(month)) return null;
-  const past = await cacheJson(`ep3/${st.id}/${d}`, 86400, async () => {
-    let t = 0;
-    for (let i = 1; i < m; i += 4) {
-      const xs = await Promise.all([i, i + 1, i + 2, i + 3].filter((k) => k < m).map((k) => cloudMonthKwh(env, st, `${y}-${String(k).padStart(2, "0")}`, ctx)));
-      if (xs.some((x) => x === null)) return null;
-      t += xs.reduce((a, x) => a + x, 0);
-    }
-    return Math.round(t * 10) / 10;
-  });
-  let year = isNum(past) ? past + month : null;
   const total = isNum(st.total_kwh) && st.total_kwh > 0 ? st.total_kwh : null;
+  let year = null;
+  if (total !== null) {
+    let prev = 0, ok = true;
+    for (let k = 1; k <= 5; k++) { // tối đa 5 năm trước
+      const v = await yearKwh(env, st, y - k, ctx);
+      if (v === null) { ok = false; break; }
+      if (v <= 0) break;
+      prev += v;
+    }
+    if (ok) year = total - prev;
+  }
+  if (isNum(year) && year < month) year = month;
   if (isNum(year) && total !== null && year > total) year = total;
   return { month, year: isNum(year) ? Math.round(year * 10) / 10 : null };
 }
