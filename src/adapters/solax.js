@@ -227,6 +227,16 @@ export default {
     let alarms = [];
     try { alarms = (await allPages(creds, token, "/openapi/v2/alarm/page_alarm_info", { plantId, deviceSn: sn, alarmState: "1" })) || []; } catch {}
     const list = toList(creds, inv, bat, ex);
+    // MỚI (08/11/2026): "Daily consumption" trên web SolaX = loadConsumption của API thống kê get_stat_data (theo ngày trong tháng)
+    try {
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const st = await postJson(creds, token, "/openapi/v2/plant/energy/get_stat_data", { plantId, dateType: "2", date: today.slice(0, 7) });
+      const it = (st?.plantEnergyStatDataList || []).find((x) => String(x.date).slice(0, 10) === today);
+      if (it) {
+        list.push({ name: "Daily Consumption", value: num(it.loadConsumption), unit: "kWh" });
+        for (const [k, v] of Object.entries(it)) list.push({ key: `stat.${k}`, name: `stat.${k}`, value: v, unit: "", group: "Gốc SolaX – thống kê hôm nay" });
+      }
+    } catch {}
     // MỚI (08/11/2026): đưa NGUYÊN các trường SolaX trả về (inverter, pin, trạm) vào danh sách, nhóm "Gốc SolaX …",
     // để người dùng chép đối chiếu / tự gán vào ô hiển thị — không đoán tên trường.
     const flat = (o, pre, grp, depth = 0) => {
