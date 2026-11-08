@@ -1349,22 +1349,29 @@ function revenueHtml(d) {
   const st = S.st || {}, E = S.energy || {};
   const price = isNum(st.price_kwh) ? st.price_kwh : PRICE_DEF;
   const today = isNum(d.pv.today_kwh) ? d.pv.today_kwh : E.today;
-  const month = isNum(E.month) || isNum(today) ? Math.max(E.month || 0, today || 0) : null; // dữ liệu lưu chưa đủ tháng thì ít nhất bằng hôm nay
+  // SỬA (08/11/2026): không tự suy tháng/năm — server không có số thật thì hiện "--"
+  const month = isNum(E.month) ? E.month : null;
   const total = isNum(d.pv.total_kwh) ? d.pv.total_kwh : E.total;
-  let year = isNum(E.year) || isNum(month) ? Math.max(E.year || 0, month || 0) : null;
-  if (isNum(year) && isNum(total) && total > 0 && year > total) year = total; // SỬA (08/11/2026): năm không thể vượt tổng
+  const year = isNum(E.year) ? E.year : null;
   const c = (t, k) => `<div class="echip"><span>${t}</span><b class="ce">${fVnd(isNum(k) ? k * price : null)}</b><small class="muted" style="display:block">${fK(k)}</small></div>`;
   return `<div class="card mt wide"><h3>${ico("chart", 'style="width:18px;height:18px;color:var(--e)"')} Tiền khai thác
     ${SHARE ? `<span class="tag">${nf(price, 0)} đ/kWh</span>` : `<button class="tag" id="bPrice" style="cursor:pointer;border:0;font:inherit;font-size:11px">${nf(price, 0)} đ/kWh${isNum(st.price_kwh) ? "" : " (mặc định)"} ✎</button>`}</h3>
-    <div class="estrip rev">${c("Hôm nay", today)}${c("Tháng này", month)}${c("Năm nay", year)}${c("Tổng", total)}</div></div>`;
+    <div class="estrip rev">${c("Hôm nay", today)}${c("Tháng này", month)}${c("Năm nay", year)}${c("Tổng", total)}</div>
+    ${year === null && !SHARE ? `<p class="small muted" style="margin:8px 0 0">Năm nay: hãng chưa trả số liệu năm nên để trống (không tự suy).</p>` : ""}</div>`;
 }
 function priceSheet() {
   const s = S.st;
   openSheet(`<h2>Giá điện tính tiền khai thác</h2>
     <div class="field"><label for="p_v">Giá (đ/kWh)</label><input class="inp" id="p_v" inputmode="decimal" placeholder="${PRICE_DEF}" value="${esc(s.price_kwh ?? "")}"></div>
-    <p class="small muted" style="margin:0 0 8px">Tiền = sản lượng PV × giá. Để trống dùng mặc định ${nf(PRICE_DEF, 0)} đ/kWh. Tháng/năm lấy theo sản lượng từng tháng trên cloud hãng.</p>
-    <div class="row2 mt"><button class="btn" id="p_x">Đóng</button><button class="btn pri" id="p_s">Lưu</button></div>`);
+    <p class="small muted" style="margin:0 0 8px">Tiền = sản lượng PV × giá. Để trống dùng mặc định ${nf(PRICE_DEF, 0)} đ/kWh. Tháng/năm chỉ hiện khi có số thật từ hãng (nguồn: tháng – ${esc(S.energy?.src_month || "chưa có")}, năm – ${esc(S.energy?.src_year || "chưa có")}).</p>
+    <div class="row2 mt"><button class="btn" id="p_x">Đóng</button><button class="btn pri" id="p_s">Lưu</button></div>
+    <button class="btn mt" id="p_raw" style="width:100%">Xem số liệu gốc từ hãng</button><pre id="p_out" class="small" style="display:none;white-space:pre-wrap;word-break:break-all;max-height:50vh;overflow:auto;user-select:text"></pre>`);
   $("#p_x").onclick = closeSheet;
+  // MỚI (08/11/2026): xem số liệu gốc hãng trả về để kiểm chứng tháng/năm (chép gửi cho kỹ thuật)
+  $("#p_raw").onclick = async () => {
+    const o = $("#p_out"); o.style.display = "block"; o.textContent = "Đang lấy…";
+    try { const r = await api(`/api/stations/${s.id}/energy-raw`); o.textContent = JSON.stringify(r, null, 1); try { await navigator.clipboard.writeText(o.textContent); toast("Đã chép vào bộ nhớ tạm"); } catch {} } catch (e) { o.textContent = e.message; }
+  };
   $("#p_s").onclick = async () => {
     const v = $("#p_v").value.trim().replace(/\./g, "").replace(",", ".");
     try { await api(`/api/stations/${s.id}`, { method: "PATCH", body: JSON.stringify({ price_kwh: v }) }); s.price_kwh = v === "" ? null : Number(v); closeSheet(); window.__insRedraw?.(); toast("Đã lưu giá"); } catch (e) { toast(e.message); }

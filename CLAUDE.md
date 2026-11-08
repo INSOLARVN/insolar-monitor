@@ -16,6 +16,7 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 - Được giao toàn quyền thì làm luôn, không hỏi lại.
 - Giao diện ghi pin là **"Pin lưu trữ"** — không bao giờ ghi "INS.ESS".
 - Không vẽ lại xe/nhân vật/thiết kế có bản quyền (đã từ chối vẽ VinFast VF7 → dùng xe SUV coupe tự thiết kế).
+- **KHÔNG ĐOÁN BỪA (08/11/2026):** số liệu hiển thị phải là số thật hãng trả về hoặc đo được. Không tự suy/ước tính (vd lấy Tổng − năm trước, cộng dồn rồi "chặn" cho hợp lý). Chưa có số thật thì hiện "--" và ghi rõ lý do. Chưa xem được dữ liệu thô của API thì phải nói thẳng là chưa kiểm chứng, làm công cụ xem số liệu gốc (vd nút "Xem số liệu gốc từ hãng") để đối chiếu trước khi sửa — không đẩy lên trang thật một cách tính dựa trên phỏng đoán tên trường/ý nghĩa API.
 - Chú thích code bằng tiếng Việt, ghi `MỚI (dd/mm/yyyy)` / `SỬA (dd/mm/yyyy)` kèm lý do.
 
 ## Cấu trúc
@@ -44,7 +45,7 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 6. **Cảnh báo/sự cố từ cloud hãng (07/11/2026):** adapter có `fetchAlarms` (Deye `/station/alertList`, Solis `/v1/api/alarmList`, SolaX `/openapi/v2/alarm/page_alarm_info`, PV Pro `api/v1/event/{sn}/realtime`, Solarman OpenAPI `/device/v1.0/alertList`, Solarman app `/maintain-s/operating/alert/search`) → bảng `alarms` (tự tạo trong `ensureAlarms`), đồng bộ 15 phút/lần (hoặc khi bấm đồng bộ), tối đa 60 trạm/tài khoản/lượt. Trang `#/alarms` (nút chuông), thẻ cảnh báo trong Tổng quan trạm; trạm có lỗi đang mở hiện "Cảnh báo". Danh sách trạm có hàng lọc theo hãng. FoxESS, Sigenergy, gateway chưa có. **Chưa thử với tài khoản thật.**
 
-7. **Tiền khai thác (07/11/2026):** mỗi trạm có `stations.price_kwh` (đ/kWh, trống = 3.870); thẻ "Tiền khai thác" ở Tổng quan (hôm nay / tháng / năm / tổng = sản lượng PV × giá; tháng/năm cộng từ `readings` qua `energySum`). Bấm nhãn giá để sửa.
+7. **Tiền khai thác (07/11/2026, sửa 08/11/2026):** mỗi trạm có `stations.price_kwh` (đ/kWh, trống = 3.870); thẻ "Tiền khai thác" ở Tổng quan (hôm nay / tháng / năm / tổng = sản lượng PV × giá). `energySum`: tháng = số hãng trả sẵn (`stations.month_kwh`) hoặc lịch sử tháng của cloud; năm = **chỉ** số hãng trả sẵn (`stations.year_kwh`: Solis `yearEnergy`, Sigenergy, Solarman `generationYear` nếu có); `readings` chỉ dùng khi app đã ghi đủ từ đầu tháng/năm; không có → "--". Số "năm" của Solarman (`/stats/year`) và cộng tháng đã cho kết quả sai với trạm thật (Daikin – LHP) → đã bỏ. Bấm nhãn giá → "Xem số liệu gốc từ hãng" (`/api/stations/:id/energy-raw`, adapter `rawEnergy`, hiện có ở Solarman) để kiểm chứng.
 8. **Tìm kiếm danh sách trạm (07/11/2026):** ô tìm nằm ngoài vùng vẽ lại, chờ 150 ms, bỏ qua lúc bộ gõ đang ghép dấu, tìm không dấu (`fold`), hiện 40 trạm đầu + "Xem thêm".
 
 9. **Gán thông số (07/11/2026):** mỗi hãng/dòng/đời máy đặt tên khác nhau → (a) `fillBattery` trong `canonical.js` tự dò tên pin linh hoạt; (b) người dùng bấm vào thông số (tab Biến tần hoặc "Tất cả thông số pin từ hãng") → chọn ô hiển thị + phạm vi (trạm / dòng máy `device.model_key` / cả hãng) + hệ số nhân. Lưu bảng `field_maps` (tự tạo trong `ensureAlarms`), áp dụng trong `fromCloudList(…, maps)` qua `applyMaps` (ghi đè tự dò; trạm > dòng máy > hãng). API `/api/field-maps` (GET/POST/DELETE). Chỉ cho trạm cloud (gateway dùng profile thanh ghi).

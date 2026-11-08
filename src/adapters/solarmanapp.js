@@ -250,6 +250,8 @@ function make(biz) {
           battery_soc: f.batterySoc ?? it.batterySoc,
           today_kwh: f.generationValue ?? it.generationValue,
           total_kwh: f.generationTotal ?? it.generationTotal,
+          // MỚI (08/11/2026): chỉ dùng khi Solarman trả sẵn sản lượng tháng/năm (không tự tính)
+          month_kwh: f.generationMonth ?? it.generationMonth, year_kwh: f.generationYear ?? it.generationYear,
           data_time: t,
         }));
       }
@@ -306,6 +308,22 @@ function make(biz) {
       return { points };
     });
     return { ...out, token: fresh };
+  },
+
+  // MỚI (08/11/2026): số liệu gốc Solarman trả về (để kiểm chứng sản lượng tháng/năm, không đoán)
+  async rawEnergy(creds, cached, stationId, date) {
+    const { y, m } = ymd(date);
+    const { out, fresh } = await W(creds, cached, async (s) => {
+      const res = {};
+      const get = async (k, method, path, body) => { try { res[k] = { path, data: await call(s, method, path, body) }; } catch (e) { res[k] = { path, error: String(e.message || e) }; } };
+      await get("fast_system", "GET", `/maintain-s/fast/system/${stationId}`);
+      for (const p of [`/maintain-s/history/batteryPower/${stationId}/stats/year?year=${y}`, `/maintain-s/history/power/${stationId}/stats/year?year=${y}`,
+        `/maintain-s/history/batteryPower/${stationId}/stats/year?year=${y - 1}`, `/maintain-s/history/power/${stationId}/stats/year?year=${y - 1}`,
+        `/maintain-s/history/batteryPower/${stationId}/stats/month?year=${y}&month=${m}`, `/maintain-s/history/power/${stationId}/stats/total`])
+        await get(p.replace(/^.*\/(batteryPower|power)\/\d+\/stats\//, "$1 ").replace(/\?/, " "), "GET", p);
+      return res;
+    });
+    return { raw: out, token: fresh };
   },
 
   // MỚI (07/11/2026): cảnh báo giống mục "Cảnh báo" trên web Solarman — POST /maintain-s/operating/alert/search theo trạm

@@ -304,8 +304,7 @@ async function cloudHistory(env, st, range, d, ctx) {
   } catch (e) { return { error: String(e.message || e) }; }
 }
 
-// SỬA (08/11/2026): số "năm" của cloud Solarman không tin được (lớn hơn cả tổng) → năm = cộng sản lượng
-// từng tháng (lấy bằng lịch sử tháng, số này khớp app gốc). Tháng đã qua đệm 1 ngày, tháng này đệm 1 giờ.
+// MỚI (08/11/2026): đệm kết quả JSON ở Cloudflare cache; sản lượng tháng này lấy từ lịch sử tháng của hãng (đệm 1 giờ)
 async function cacheJson(key, ttl, fn) {
   const req = new Request(`https://cache.insolar-monitor/${key}`);
   try { const hit = await caches.default.match(req); if (hit) return await hit.json(); } catch {}
@@ -320,57 +319,38 @@ async function cloudMonthKwh(env, st, ym, ctx) {
   for (const b of r.bars) if (isNum(b.pv)) by[b.day || b.label] = Math.max(by[b.day || b.label] ?? 0, b.pv);
   return Math.round(Object.values(by).reduce((t, x) => t + x, 0) * 10) / 10;
 }
-// SỬA (08/11/2026): cộng các tháng năm nay vẫn ra lớn hơn thực tế → Năm nay = Tổng − sản lượng các năm trước
-// (các năm trước cộng theo tháng, đệm 7 ngày; dừng khi gặp năm không có sản lượng = trước ngày lắp).
-async function yearKwh(env, st, y, ctx) {
-  return cacheJson(`ey4/${st.id}/${y}`, 7 * 86400, async () => {
-    const xs = await Promise.all(Array.from({ length: 12 }, (_, i) => cloudMonthKwh(env, st, `${y}-${String(i + 1).padStart(2, "0")}`, ctx).catch(() => null)));
-    if (xs.some((x) => x === null)) return null;
-    return Math.round(xs.reduce((t, x) => t + x, 0) * 10) / 10;
-  });
-}
-async function cloudYear(env, st, ctx) {
+// SỬA (08/11/2026): bỏ mọi phép tự suy sản lượng năm (cộng tháng / Tổng − năm trước) vì đã sai với trạm thật.
+// Nguyên tắc: chỉ hiện số hãng trả thật; không có thì để trống ("--").
+//  - Tháng: lịch sử tháng của cloud hãng (cộng các ngày trong tháng hãng trả về), hoặc số tháng hãng trả sẵn.
+//  - Năm: chỉ khi hãng trả sẵn (Solis yearEnergy, Sigenergy, Solarman generationYear nếu có).
+//  - Dữ liệu app tự ghi (readings) chỉ dùng khi app đã ghi đủ từ đầu tháng/đầu năm.
+async function cloudMonth(env, st, ctx) {
   if (!st.account_id || st.gateway_id) return null;
-  const d = vnToday(), y = Number(d.slice(0, 4));
-  const month = await cacheJson(`em3/${st.id}/${d.slice(0, 7)}/${d}-${new Date().getUTCHours()}`, 3600, () => cloudMonthKwh(env, st, d.slice(0, 7), ctx));
-  if (!isNum(month)) return null;
-  const total = isNum(st.total_kwh) && st.total_kwh > 0 ? st.total_kwh : null;
-  let year = null;
-  if (total !== null) {
-    let prev = 0, ok = true;
-    for (let k = 1; k <= 5; k++) { // tối đa 5 năm trước
-      const v = await yearKwh(env, st, y - k, ctx);
-      if (v === null) { ok = false; break; }
-      if (v <= 0) break;
-      prev += v;
-    }
-    if (ok) year = total - prev;
-  }
-  if (isNum(year) && year < month) year = month;
-  if (isNum(year) && total !== null && year > total) year = total;
-  return { month, year: isNum(year) ? Math.round(year * 10) / 10 : null };
+  const d = vnToday();
+  return cacheJson(`em3/${st.id}/${d.slice(0, 7)}/${d}-${new Date().getUTCHours()}`, 3600, () => cloudMonthKwh(env, st, d.slice(0, 7), ctx)).catch(() => null);
 }
 
-// MỚI (07/11/2026): sản lượng tháng/năm (cộng max today_kwh từng ngày trong readings) để tính tiền khai thác
-// SỬA (08/11/2026): trước chỉ cộng readings (chỉ có từ ngày thêm trạm vào app) → tháng = năm, thiếu số.
-// Nay ưu tiên lấy sản lượng từng tháng của năm từ cloud hãng (đệm 1 giờ), lỗi mới dùng readings.
 async function energySum(env, st, ctx) {
-  const cloud = await cloudYear(env, st, ctx).catch(() => null);
-  // Hãng có sẵn tháng/năm trong danh sách trạm (Solis, Sigenergy) → dùng luôn nếu là số của tháng này
-  if (!cloud?.year) {
-    const r = await env.DB.prepare("SELECT month_kwh, year_kwh, my_day FROM stations WHERE id=?1").bind(st.id).first().catch(() => null);
-    if (r?.my_day && r.my_day.slice(0, 7) === vnToday().slice(0, 7) && (isNum(r.month_kwh) || isNum(r.year_kwh)))
-      return { today: st.today_kwh ?? null, month: r.month_kwh ?? cloud?.month ?? null, year: r.year_kwh ?? null, total: st.total_kwh ?? null, src: "brand" };
+  const d = vnToday(), out = { today: st.today_kwh ?? null, month: null, year: null, total: st.total_kwh ?? null, src_month: null, src_year: null };
+  const b = await env.DB.prepare("SELECT month_kwh, year_kwh, my_day FROM stations WHERE id=?1").bind(st.id).first().catch(() => null);
+  if (b?.my_day?.slice(0, 7) === d.slice(0, 7)) {
+    if (isNum(b.month_kwh)) { out.month = b.month_kwh; out.src_month = "hãng"; }
+    if (isNum(b.year_kwh)) { out.year = b.year_kwh; out.src_year = "hãng"; }
   }
-  if (cloud) return { today: st.today_kwh ?? null, ...cloud, total: st.total_kwh ?? null, src: "cloud" };
-  try {
-    const d = vnToday();
-    const r = await env.DB.prepare(
-      `SELECT SUM(CASE WHEN day >= ?3 THEN pv ELSE 0 END) AS month, SUM(pv) AS year FROM
-        (SELECT substr(datetime(ts,'+7 hours'),1,10) AS day, MAX(today_kwh) AS pv FROM readings WHERE station_id=?1 AND ts >= ?2 GROUP BY day)`
-    ).bind(st.id, new Date(d.slice(0, 4) + "-01-01T00:00:00+07:00").toISOString(), d.slice(0, 7) + "-01").first();
-    return { today: st.today_kwh ?? null, month: r?.month ?? null, year: r?.year ?? null, total: st.total_kwh ?? null };
-  } catch { return null; }
+  if (out.month === null) { const m = await cloudMonth(env, st, ctx); if (isNum(m)) { out.month = m; out.src_month = "lịch sử tháng của hãng"; } }
+  if (out.month === null || out.year === null) {
+    try {
+      const r = await env.DB.prepare(
+        `SELECT MIN(day) AS first, SUM(CASE WHEN day >= ?3 THEN pv ELSE 0 END) AS month, SUM(pv) AS year FROM
+          (SELECT substr(datetime(ts,'+7 hours'),1,10) AS day, MAX(today_kwh) AS pv FROM readings WHERE station_id=?1 AND ts >= ?2 GROUP BY day)`
+      ).bind(st.id, new Date(d.slice(0, 4) + "-01-01T00:00:00+07:00").toISOString(), d.slice(0, 7) + "-01").first();
+      if (r?.first) {
+        if (out.month === null && r.first <= d.slice(0, 7) + "-01") { out.month = r.month; out.src_month = "app tự ghi"; }
+        if (out.year === null && r.first <= d.slice(0, 4) + "-01-01") { out.year = r.year; out.src_year = "app tự ghi"; }
+      }
+    } catch {}
+  }
+  return out;
 }
 
 async function history(env, st, range, date, ctx) {
@@ -524,7 +504,7 @@ async function api(req, env, url, ctx) {
     return json(results);
   }
 
-  m = p.match(/^\/api\/stations\/(\d+)(?:\/(detail|history|share|settings|raw|commands))?$/);
+  m = p.match(/^\/api\/stations\/(\d+)(?:\/(detail|history|share|settings|raw|commands|energy-raw))?$/);
   if (m) {
     const st = await getStation(env, Number(m[1]));
     if (!st) return json({ error: "Không tìm thấy trạm" }, 404);
@@ -533,6 +513,22 @@ async function api(req, env, url, ctx) {
     if (sub === "detail") {
       const [det, weather, energy] = await Promise.all([stationDetail(env, st, ctx), weatherFor(env, st), energySum(env, st, ctx)]);
       return json({ ...det, weather, energy });
+    }
+    // MỚI (08/11/2026): số liệu gốc hãng trả về để kiểm chứng sản lượng tháng/năm
+    if (sub === "energy-raw") {
+      const acc = st.account_id ? await env.DB.prepare("SELECT * FROM accounts WHERE id=?1").bind(st.account_id).first() : null;
+      const ad = acc && ADAPTERS[acc.brand];
+      const b = await env.DB.prepare("SELECT month_kwh, year_kwh, my_day, total_kwh, today_kwh FROM stations WHERE id=?1").bind(st.id).first();
+      const out = { brand: acc?.brand || "gateway", station_row: b, energy: await energySum(env, st, ctx) };
+      if (ad?.rawEnergy) {
+        try {
+          const creds = await decrypt(env.ENC_KEY, acc.creds_enc);
+          const cached = acc.token_enc ? await decrypt(env.ENC_KEY, acc.token_enc).catch(() => null) : null;
+          const r = await ad.rawEnergy(creds, cached, st.ext_id, vnToday());
+          out.raw = r.raw;
+        } catch (e) { out.raw_error = String(e.message || e); }
+      } else out.note = "Hãng này chưa có công cụ xem số liệu gốc";
+      return json(out);
     }
     if (sub === "history") return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date"), ctx));
     if (sub === "commands") {
