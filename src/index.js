@@ -301,8 +301,35 @@ async function cloudHistory(env, st, range, d, ctx) {
   } catch (e) { return { error: String(e.message || e) }; }
 }
 
+async function cloudYear(env, st, ctx) {
+  if (!st.account_id || st.gateway_id) return null;
+  const d = vnToday();
+  const key = new Request(`https://cache.insolar-monitor/energy-year/${st.id}/${d}`);
+  try {
+    const hit = await caches.default.match(key);
+    if (hit) return await hit.json();
+  } catch {}
+  const r = await cloudHistory(env, st, "year", d, ctx);
+  if (!r?.bars?.length) return null;
+  const mm = d.slice(5, 7);
+  let year = 0, month = null, any = false;
+  for (const b of r.bars) {
+    if (!isNum(b.pv)) continue;
+    any = true; year += b.pv;
+    if (String(b.label).padStart(2, "0") === mm) month = b.pv;
+  }
+  if (!any) return null;
+  const out = { month: month ?? 0, year: Math.round(year * 10) / 10 };
+  try { ctx?.waitUntil?.(caches.default.put(key, new Response(JSON.stringify(out), { headers: { "Cache-Control": "max-age=3600", "Content-Type": "application/json" } }))); } catch {}
+  return out;
+}
+
 // MỚI (07/11/2026): sản lượng tháng/năm (cộng max today_kwh từng ngày trong readings) để tính tiền khai thác
-async function energySum(env, st) {
+// SỬA (08/11/2026): trước chỉ cộng readings (chỉ có từ ngày thêm trạm vào app) → tháng = năm, thiếu số.
+// Nay ưu tiên lấy sản lượng từng tháng của năm từ cloud hãng (đệm 1 giờ), lỗi mới dùng readings.
+async function energySum(env, st, ctx) {
+  const cloud = await cloudYear(env, st, ctx);
+  if (cloud) return { today: st.today_kwh ?? null, ...cloud, total: st.total_kwh ?? null, src: "cloud" };
   try {
     const d = vnToday();
     const r = await env.DB.prepare(
@@ -415,7 +442,7 @@ async function api(req, env, url, ctx) {
     const det = await stationDetail(env, st, ctx);
     if (det.detail) { det.detail.settings = []; det.detail.params = []; }
     const { customer, phone, note, share_token, gateway_id, account_id, ext_id, account_label, lat, lon, ...pub } = st;
-    const [weather, energy] = await Promise.all([weatherFor(env, st), energySum(env, st)]);
+    const [weather, energy] = await Promise.all([weatherFor(env, st), energySum(env, st, ctx)]);
     return json({ station: pub, ...det, weather, energy });
   }
 
@@ -471,7 +498,7 @@ async function api(req, env, url, ctx) {
     const sub = m[2];
     if (!sub && method === "GET") return json(st);
     if (sub === "detail") {
-      const [det, weather, energy] = await Promise.all([stationDetail(env, st, ctx), weatherFor(env, st), energySum(env, st)]);
+      const [det, weather, energy] = await Promise.all([stationDetail(env, st, ctx), weatherFor(env, st), energySum(env, st, ctx)]);
       return json({ ...det, weather, energy });
     }
     if (sub === "history") return json(await history(env, st, url.searchParams.get("range") || "day", url.searchParams.get("date"), ctx));
