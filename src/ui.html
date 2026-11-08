@@ -1106,8 +1106,14 @@ function skyAt(h, dark) {
 // ---- Thời tiết (Open-Meteo, mã WMO) — MỚI 31/10/2026 ----
 function wxInfo(w) {
   if (!w || w.code === null || w.code === undefined) return null;
+  // SỬA (08/11/2026): trạm chưa có toạ độ → thời tiết TP Thanh Hoá không phải thời tiết tại trạm (đã vẽ mưa khi trạm đang nắng) → không vẽ
+  if (w.approx) return null;
   const c = Number(w.code), cl = isNum(w.cloud) ? w.cloud / 100 : null;
   let k, t;
+  // SỬA (08/11/2026): Open-Meteo là số MÔ HÌNH dự báo (ô lưới vài km), không phải đo tại trạm. Ban ngày trạm đang phát ≥ 40% công suất lắp đặt
+  // (số đo thật của biến tần) thì tại trạm có nắng → không vẽ mưa/âm u theo dự báo nữa
+  const r = pvRatio(S.detail?.pv?.power), sunPv = w.is_day !== 0 && r !== null && r >= 40;
+  if (sunPv) { k = "partly"; t = "Có nắng"; return { k, t, cover: 0.2, wet: 0, gloom: 0, temp: w.temp, rad: w.radiation, approx: false, byPv: true }; }
   if (c >= 95) { k = "storm"; t = "Dông"; }
   else if (c >= 80) { k = "rain"; t = c >= 81 ? "Mưa rào to" : "Mưa rào"; }
   else if (c >= 71 && c <= 77) { k = "rain"; t = "Mưa tuyết"; }
@@ -1412,7 +1418,7 @@ function overviewHtml(d, status) {
   return `<div class="ov">${scene(d, status)}
   <div class="quad">
     ${qcard("var(--sun)", "var(--sun-soft)", "panel", "Mái pin PV", d.pv.power, [...pvRows, ...(pvRatio(d.pv.power) !== null ? [["Tỉ lệ phát", Math.round(pvRatio(d.pv.power)) + "% của " + nf(S.st.capacity_kwp, 1) + " kWp"]] : []),
-      ...(wxInfo(S.weather) ? [[S.weather.approx ? "Thời tiết ≈TH" : "Thời tiết", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + "W/m²" : "")] /* SỬA (08/11/2026): nhãn ngắn — "≈TH" = lấy theo TP Thanh Hoá vì trạm chưa có toạ độ */] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
+      ...(S.weather?.approx ? [["Thời tiết", "-- (trạm chưa có toạ độ)"]] /* SỬA (08/11/2026): không lấy thời tiết TP Thanh Hoá thay cho trạm */ : wxInfo(S.weather) ? [[wxInfo(S.weather).byPv ? "Thời tiết (theo sản lượng)" : "Thời tiết dự báo", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + "W/m²" : "")] /* SỬA (08/11/2026): nhãn ngắn — "≈TH" = lấy theo TP Thanh Hoá vì trạm chưa có toạ độ */] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
     ${qcard("var(--home)", "var(--home-soft)", "home", d.load.calc ? "Tải nhà ≈ (tính)" : "Tải nhà", d.load.power, [...phaseRows(d.load.phases, "Áp / dòng") /* SỬA (08/11/2026): không lấy áp/dòng đầu ra biến tần thay cho tải nhà */,
       ["Dự phòng UPS/EPS", fW(d.load.ups_power)], ["Tiêu thụ ngày", fK(d.load.today_kwh), "ce"]])}
     ${qcard("var(--bat)", "var(--bat-soft)", "battery", "Pin lưu trữ", d.battery.power, [["Áp / dòng", `${fV(d.battery.voltage)} / ${d.battery.current_calc ? "≈" : ""}${fA(d.battery.current)}`, "cv"],
