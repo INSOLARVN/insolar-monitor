@@ -1350,14 +1350,20 @@ function revenueHtml(d) {
   const price = isNum(st.price_kwh) ? st.price_kwh : PRICE_DEF;
   const today = isNum(d.pv.today_kwh) ? d.pv.today_kwh : E.today;
   // SỬA (08/11/2026): không tự suy tháng/năm — server không có số thật thì hiện "--"
-  const month = isNum(E.month) ? E.month : null;
+  let month = isNum(E.month) ? E.month : null;
   const total = isNum(d.pv.total_kwh) ? d.pv.total_kwh : E.total;
-  const year = isNum(E.year) ? E.year : null;
+  // SỬA (08/11/2026): số tháng/năm hãng trả mà LỚN HƠN tổng công tơ biến tần là dữ liệu hãng sai
+  // (vd Solarman Daikin – LHP: năm 2026 = 15.535 kWh do tháng 1/2026 = 5.758 kWh bất thường, công tơ chỉ 9.909 kWh) → không hiện, ghi rõ.
+  const bad = (k) => isNum(k) && isNum(total) && total > 0 && k > total + 0.5;
+  const yearRaw = isNum(E.year) ? E.year : null, monthRaw = month;
+  const year = bad(yearRaw) ? null : yearRaw;
+  if (bad(monthRaw)) month = null;
   const c = (t, k) => `<div class="echip"><span>${t}</span><b class="ce">${fVnd(isNum(k) ? k * price : null)}</b><small class="muted" style="display:block">${fK(k)}</small></div>`;
   return `<div class="card mt wide"><h3>${ico("chart", 'style="width:18px;height:18px;color:var(--e)"')} Tiền khai thác
     ${SHARE ? `<span class="tag">${nf(price, 0)} đ/kWh</span>` : `<button class="tag" id="bPrice" style="cursor:pointer;border:0;font:inherit;font-size:11px">${nf(price, 0)} đ/kWh${isNum(st.price_kwh) ? "" : " (mặc định)"} ✎</button>`}</h3>
     <div class="estrip rev">${c("Hôm nay", today)}${c("Tháng này", month)}${c("Năm nay", year)}${c("Tổng", total)}</div>
-    ${year === null && !SHARE ? `<p class="small muted" style="margin:8px 0 0">Năm nay: hãng chưa trả số liệu năm nên để trống (không tự suy).</p>` : ""}</div>`;
+    ${!SHARE && bad(yearRaw) ? `<p class="small muted" style="margin:8px 0 0">Năm nay: hãng báo ${fK(yearRaw)} nhưng lớn hơn tổng công tơ biến tần ${fK(total)} → số liệu năm của hãng sai, không hiển thị.</p>`
+      : year === null && !SHARE ? `<p class="small muted" style="margin:8px 0 0">Năm nay: hãng chưa trả số liệu năm nên để trống (không tự suy).</p>` : ""}</div>`;
 }
 function priceSheet() {
   const s = S.st;

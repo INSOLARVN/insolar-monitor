@@ -52,6 +52,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 10. **Rà soát "không đoán" (08/11/2026):** đã bỏ: SolaX tự tính công suất tải/điện tiêu thụ/dung lượng pin Ah (giả định 51,2V); `finish()` ghi đè công suất pha bằng tổng và tính lại dòng pha từ P/U (nay số pha lệch thì để trống); thẻ Tải nhà lấy áp/dòng đầu ra biến tần khi thiếu số tải; tên trường tháng/năm đoán của Sigenergy/Solarman. Còn giữ nhưng **ghi rõ**: công suất tải tính từ cân bằng khi hãng không trả (`load.calc` → "≈ (tính)"), dòng pin = P/U (`battery.current_calc` → "≈"), thời tiết dùng TP Thanh Hoá khi trạm chưa có toạ độ (ghi rõ). Còn giữ (dựa trên quy luật vật lý, đã đối chiếu trạm thật 01–03/11): tự đảo dấu pin/lưới theo cân bằng PV+pin+lưới≈tải; PV chuỗi = V×A khi thiếu W; ẩn chuỗi PV chưa từng phát (`pv_seen`). **Chưa kiểm chứng với dữ liệu thật:** sản lượng tháng Solarman (lịch sử tháng), dò tên pin `fillBattery`.
 
+11. **Dữ liệu thật Solarman Business (Daikin – LHP, 08/11/2026):** `fast/system`: `generationUploadTotal` = 9.909,2 (công tơ biến tần, khớp app gốc 35,66 tr ở giá 3.600 đ). `/stats/total` = 18.469,3 = 2025 (2.934,2, chỉ có tháng 12) + 2026 (15.535,1); tháng 1/2026 = 5.758,4 và 12/2025 = 2.934,2 là số thống kê **sai của Solarman** (hệ 12,3 kWp). Tháng 2–11 hợp lý; tháng 11 = 196,5 khớp. Danh sách trạm `generationMonth/generationYear` = số `/stats/month|year`. Giao diện: tháng/năm hãng trả > tổng công tơ → không hiện, ghi rõ lý do. Giá tiền app gốc = `incomeValue/generationValue` = 3.600 đ/kWh.
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.

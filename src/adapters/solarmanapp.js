@@ -250,6 +250,9 @@ function make(biz) {
           battery_soc: f.batterySoc ?? it.batterySoc,
           today_kwh: f.generationValue ?? it.generationValue,
           total_kwh: f.generationTotal ?? it.generationTotal,
+          // MỚI (08/11/2026): đã kiểm chứng với trạm thật (Daikin – LHP): danh sách trạm có generationMonth/generationYear
+          // = đúng số của /stats/month, /stats/year (196,5 / 15.535,1). Đây là số THỐNG KÊ của Solarman, có thể lệch công tơ biến tần.
+          month_kwh: it.generationMonth, year_kwh: it.generationYear,
           data_time: t,
         }));
       }
