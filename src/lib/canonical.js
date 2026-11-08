@@ -183,32 +183,12 @@ export function summary(d) {
   };
 }
 
-// MỚI (01/11/2026): kiểm tra cân bằng công suất PV + Pin(xả) + Lưới(mua) ≈ Tải để phát hiện hãng trả NGƯỢC DẤU pin/lưới.
-// Trả về { sb, sg } = hệ số dấu nên nhân cho pin, lưới (1 = giữ nguyên, -1 = đảo). Chỉ đảo khi đảo khớp rõ rệt hơn hẳn.
-export function balanceSigns(pv, load, bat, grid) {
-  pv = n(pv); load = n(load); bat = n(bat); grid = n(grid);
-  if (pv === null || load === null || (bat === null && grid === null)) return { sb: 1, sg: 1 };
-  const err = (sb, sg) => Math.abs(pv + sb * (bat || 0) + sg * (grid || 0) - load);
-  const tol = Math.max(150, 0.15 * Math.max(pv, load));
-  const base = err(1, 1);
-  if (base <= tol) return { sb: 1, sg: 1 };
-  let best = { sb: 1, sg: 1, e: base };
-  for (const [sb, sg] of [[1, -1], [-1, 1], [-1, -1]]) {
-    if (sb < 0 && !(Math.abs(bat || 0) > 50)) continue;
-    if (sg < 0 && !(Math.abs(grid || 0) > 50)) continue;
-    const e = err(sb, sg);
-    if (e < best.e) best = { sb, sg, e };
-  }
-  return best.e <= tol && best.e < base * 0.3 ? { sb: best.sb, sg: best.sg } : { sb: 1, sg: 1 };
-}
-
 // MỚI (01/11/2026): bước hoàn thiện chung cho mọi nguồn (gateway Modbus + cloud các hãng)
 function finish(d) {
   const b = d.battery, g = d.grid;
   // 1) Đảo dấu pin/lưới nếu hãng trả ngược quy ước (pin + = xả, lưới + = mua)
-  const { sb, sg } = balanceSigns(d.pv.power, d.load.power, b.power, g.power);
-  if (sb < 0) { b.power = -b.power; if (n(b.current) !== null) b.current = -b.current; d.sign_fixed = [...(d.sign_fixed || []), "battery"]; }
-  if (sg < 0) { g.power = -g.power; for (const p of g.phases) if (n(p.w) !== null) p.w = -p.w; d.sign_fixed = [...(d.sign_fixed || []), "grid"]; }
+  // SỬA (08/11/2026): BỎ tự đảo dấu. Dữ liệu thật Deye Kim Chung: "Grid Status: Purchasing energy" (+710 W), pin -1.644 W (đang sạc)
+  // nhưng PV+pin+lưới không bằng tải hãng báo → phép cân bằng đảo SAI cả hai. Dấu nay do từng adapter quy đổi theo đúng quy ước của hãng.
   // 2) Dòng pin cùng dấu với công suất pin (nhiều hãng trả dòng luôn dương)
   if (n(b.power) !== null && n(b.current) !== null && Math.abs(b.power) > 30 && Math.sign(b.power) !== Math.sign(b.current) && b.current !== 0) b.current = -b.current;
   // SỬA (08/11/2026): số tự tính (không phải số hãng trả) phải đánh dấu *_calc để giao diện ghi "≈ (tính)"
@@ -297,7 +277,7 @@ const CLOUD_MAP = [
   [/^load current l(\d)$/i, (d, v, mm) => (ph(d.load, +mm[1]).a = v)], // MỚI (01/11/2026)
   [/^generator power$/i, (d, v) => (d.gen.power = v)], // MỚI (01/11/2026)
   [/^battery voltage$/i, (d, v) => (d.battery.voltage = v)],
-  [/^battery current$/i, (d, v) => (d.battery.current = v)],
+  [/^battery current$|^battery total current$/i, (d, v) => (d.battery.current = v)], // SỬA (08/11/2026): Deye 2 cụm pin "Battery Total Current"
   [/^battery power$/i, (d, v) => (d.battery.power = v)],
   [/^(battery )?soc$|^remaining battery capacity$/i, (d, v) => (d.battery.soc = v)],
   [/^soh$|^battery soh$/i, (d, v) => (d.battery.soh = v)],

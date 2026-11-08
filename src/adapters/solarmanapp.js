@@ -168,7 +168,9 @@ async function withSession(creds, cached, fn, biz = false) {
 const arr = (r) => (Array.isArray(r) ? r : r?.data || r?.list || r?.records || r?.deviceList || []);
 const ymd = (date) => ({ y: Number(date.slice(0, 4)), m: Number(date.slice(5, 7)), d: Number(date.slice(8, 10)) });
 const batW = (o) => (num(o.dischargePower) !== null || num(o.chargePower) !== null ? (num(o.dischargePower) || 0) - (num(o.chargePower) || 0) : num(o.batteryPower));
-const gridW = (o) => num(o.wirePower) ?? (num(o.buyPower) !== null || num(o.gridPower) !== null ? (num(o.buyPower) || 0) - (num(o.gridPower) || 0) : null);
+// SỬA (08/11/2026): dữ liệu thật Solarman Business (Daikin – LHP): wirePower = -1.694 khi wireStatus = "PURCHASE" → wirePower ÂM = MUA
+// → đổi dấu sang quy ước app (+ = mua). Trước đây nhờ phép tự đảo dấu (đã bỏ).
+const gridW = (o) => (num(o.wirePower) !== null ? -num(o.wirePower) : null);
 
 async function inverters(s, stationId) {
   let list = [];

@@ -76,8 +76,8 @@ export default {
         status,
         pv_power_w: rt.generationPower ?? s.generationPower,
         load_power_w: rt.usePower,
-        // SỬA (01/11/2026): ưu tiên wirePower (công suất lưới thuần); không có thì mua − bán. Dấu sai sẽ được station() tự sửa theo cân bằng
-        grid_power_w: rt.wirePower ?? (num(rt.purchasePower) !== null && num(rt.gridPower) !== null ? num(rt.purchasePower) - num(rt.gridPower) : rt.gridPower),
+        // SỬA (08/11/2026): cùng nền tảng Solarman — wirePower âm = mua (đã kiểm với dữ liệu thật Solarman Business) → đổi dấu; không có thì để trống
+        grid_power_w: num(rt.wirePower) === null ? null : -num(rt.wirePower),
         battery_power_w: num(rt.dischargePower) !== null || num(rt.chargePower) !== null ? (num(rt.dischargePower) || 0) - (num(rt.chargePower) || 0) : rt.batteryPower, // MỚI (01/11/2026)
         battery_soc: rt.batterySoc,
         today_kwh: day.generationValue ?? rt.generationValue,

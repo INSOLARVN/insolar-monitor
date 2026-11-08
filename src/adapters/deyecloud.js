@@ -199,6 +199,17 @@ export default {
     return { stations: out, token: fresh };
   },
 
+  // MỚI (08/11/2026): số liệu gốc Deye trả về cho danh sách trạm (station/latest) để kiểm dấu lưới/pin — không đoán
+  async rawEnergy(creds, cached, stationId, date) {
+    const { token, fresh } = await getToken(creds, cached);
+    const res = {};
+    const get = async (k, path, body) => { try { res[k] = { path, data: await post(creds, token, path, body) }; } catch (e) { res[k] = { path, error: String(e.message || e) }; } };
+    await get("station_latest", "/station/latest", { stationId: Number(stationId) });
+    await get("station_history_day", "/station/history", { stationId: Number(stationId), granularity: 2, startAt: date, endAt: vnDate(new Date(Date.now() + 86400e3)) });
+    await get("station_history_year", "/station/history", { stationId: Number(stationId), granularity: 3, startAt: date.slice(0, 4) + "-01", endAt: (Number(date.slice(0, 4)) + 1) + "-01" });
+    return { raw: res, token: fresh };
+  },
+
   async fetchDetail(creds, cached, stationId) {
     const { token, fresh } = await getToken(creds, cached);
     const diag = [];
