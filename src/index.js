@@ -260,7 +260,7 @@ async function stationDetailRaw(env, st, ctx) {
     const creds = await decrypt(env.ENC_KEY, acc.creds_enc);
     const cached = acc.token_enc ? await decrypt(env.ENC_KEY, acc.token_enc).catch(() => null) : null;
     const r = await ad.fetchDetail(creds, cached, st.ext_id);
-    const d = fromCloudList(r.list, acc.brand, { serial: r.serial, manufacturer: ad.label, ...(r.device || {}) }, await fieldMaps(env, acc.brand, st.id));
+    const d = fromCloudList(r.list, acc.brand, { serial: r.serial, manufacturer: ad.label, ...(r.device || {}) }, null); // SỬA (08/11/2026): bỏ gán tay — chỉ dùng quy tắc chung
     d.source = acc.brand;
     // MỚI (08/11/2026): giờ biến tần đo/hãng ghi số liệu (khác giờ app lấy) — để đối chiếu với web/app hãng
     { const t = r.time; const n = typeof t === "number" || /^\d+$/.test(String(t ?? "")) ? Number(t) : null;

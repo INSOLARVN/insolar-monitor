@@ -1610,7 +1610,7 @@ const MAP_FIELDS = (() => {
     ["device.state", "Trạng thái"], ["device.alarm", "Cảnh báo"], ["device.fault", "Lỗi"], ["device.rated_power", "Công suất định mức"]]);
   return L;
 })();
-const canMap = () => !SHARE && S.st && !S.st.gateway_id && S.st.account_id;
+const canMap = () => false; // SỬA (08/11/2026): bỏ gán thông số bằng tay theo yêu cầu (người dùng không biết gán gì) — quy tắc gán chung do kỹ thuật thêm trong canonical.js
 function bindMapRows(root) {
   if (!canMap()) return;
   root.querySelectorAll("[data-src]").forEach((r) => { r.style.cursor = "pointer"; r.onclick = () => mapSheet(r.dataset.src); });
@@ -1694,7 +1694,7 @@ async function viewInverter() {
         ${d.hidden.map((h) => `<div class="prow"><span>${esc(hidLabel(h.field))}</span><b>${esc(String(h.value))} · ${esc(h.why)}</b></div>`).join("")}</div></div>` : ""}
       ${!SHARE ? `<button class="btn mt" id="bRawAll" style="width:100%">Chép toàn bộ thông số gốc từ hãng (${d.params.length})</button>` : ""}
       ${canMap() ? `<p class="small muted mt" style="margin-bottom:0">Ô nào hiện sai hoặc trống: bấm vào thông số bên dưới để gán nó vào đúng ô (áp dụng cho trạm, dòng máy hoặc cả hãng).</p>` : ""}
-      ${nUn ? `<p class="small mt" style="margin-bottom:0"><span class="tag y">chưa gán</span> ${nUn} thông số hãng có trả (khác 0) nhưng app chưa đưa vào ô hiển thị nào — đời máy này có thể đặt tên khác. Bấm vào để gán, hoặc chép gửi kỹ thuật thêm vào quy tắc chung.</p>` : ""}
+      ${nUn ? `<p class="small mt" style="margin-bottom:0"><span class="tag y">chưa gán</span> ${nUn} thông số hãng có trả (khác 0) nhưng app chưa đưa lên ô hiển thị — bấm "Chép toàn bộ thông số gốc từ hãng" gửi kỹ thuật để thêm.` : ""}
       <div class="search mt"><input id="iq" placeholder="Tìm thông số…" value="${esc(S.invQ)}" aria-label="Tìm thông số"></div>
       ${Object.entries(groups).map(([g, list]) => `<details class="grp" ${q ? "open" : ""}><summary>${esc(viGroup(g))}<span class="tag">${list.length}</span></summary><div class="in plist">
         ${list.map((p) => `<div class="prow" data-src="${esc(p.key || p.name)}"><span>${esc(vi(p.name))}${unmapped(p) ? ` <span class="tag y" title="Hãng có trả số khác 0 nhưng app chưa đưa vào ô hiển thị nào">chưa gán</span>` : ""}</span><b>${fmtVal(p)}</b></div>`).join("")}</div></details>`).join("")}
