@@ -1329,6 +1329,20 @@ document.addEventListener("click", (e) => {
 });
 
 // ================= Tổng quan =================
+// MỚI (08/11/2026): yêu cầu người dùng — thông số hãng không trả hoặc đang = 0 thì ẨN dòng đó; khác 0 thì hiện.
+// blank(): chuỗi đã định dạng không có số khác 0 (vd "0 kWh", "0V · 0A · 0W", "--", "-- / --") → ẩn. Chữ không có số (vd "Cân bằng") vẫn hiện.
+function blank(v) {
+  const t = String(v ?? "").replace(/<[^>]*>/g, "").trim();
+  if (!t || /^[-–\s/·|]*$/.test(t)) return true;
+  return /\d/.test(t) && !/[1-9]/.test(t);
+}
+function hideBlank(el) {
+  if (!el) return;
+  el.querySelectorAll(".prow").forEach((r) => { const b = r.querySelector("b"); if (b && blank(b.textContent)) r.style.display = "none"; });
+  el.querySelectorAll(".qc .kv > div").forEach((r) => { const b = r.querySelector("b"); if (b && blank(b.textContent)) r.style.display = "none"; });
+  el.querySelectorAll(".estrip:not(.rev) .echip").forEach((r) => { const b = r.querySelector("b"); if (b && blank(b.textContent)) r.style.display = "none"; });
+  el.querySelectorAll("table.tbl tr").forEach((tr) => { const td = [...tr.querySelectorAll("td")].slice(1); if (td.length && td.every((x) => blank(x.textContent))) tr.style.display = "none"; });
+}
 function qcard(color, soft, icon, title, valW, rows) {
   const [v, u] = fWsplit(valW);
   return `<div class="qc"><div class="hd"><span class="ic" style="background:${soft};color:${color}">${ico(icon)}</span>${title}</div>
@@ -1433,6 +1447,7 @@ async function viewOverview() {
     const el = $("#sv"); if (!el) return;
     if (!S.detail) { el.innerHTML = `<div class="empty">Chưa có dữ liệu chi tiết.${S.detailErr ? "<br><small>" + esc(S.detailErr) + "</small>" : ""}<br>${S.st?.gateway_id ? "Gateway chưa gửi dữ liệu lần nào." : ""}</div>`; return; }
     el.innerHTML = overviewHtml(S.detail, S.online === false ? "offline" : S.st.status) + stationAlarmsHtml();
+    hideBlank(el);
     const bp = $("#bPrice"); if (bp) bp.onclick = priceSheet;
     drawStationHeader(S.st, S.st.id);
   };
@@ -1568,6 +1583,7 @@ async function viewBattery() {
       ${bp.length ? `<div class="plist">${bp.map((p) => `<div class="prow" data-src="${esc(p.key || p.name)}"><span>${esc(p.name)}</span><b>${esc(typeof p.value === "number" ? nf(p.value, 2) : p.value)}${p.uom ? " " + esc(p.uom) : ""}</b></div>`).join("")}</div>` : `<p class="small muted" style="margin:0">Hãng không gửi thêm thông số pin nào.</p>`}
       ${!bms && !can ? `<p class="note mt">Muốn xem từng cell, khung CAN và cờ bảo vệ BMS: lắp gateway INSOLAR, nối CAN-H/CAN-L vào cổng BMS và (tuỳ chọn) RS485/Bluetooth của BMS.</p>` : ""}</div>`;
     el.innerHTML = html;
+    hideBlank(el);
     bindMapRows(el);
   };
   if (!S.detail) { try { await loadDetail(); } catch (e) { $("#sv").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; } }
@@ -1645,6 +1661,7 @@ async function viewInverter() {
     for (const p of d.params || []) {
       const nm = vi(p.name);
       if (q && !fold(nm + " " + p.name).includes(q)) continue;
+      if (!q && blank(p.value)) continue; // SỬA (08/11/2026): ẩn thông số hãng trả 0/trống (tìm kiếm thì vẫn hiện đủ)
       (groups[p.group] ??= []).push(p);
     }
     const fmtVal = (p) => {
@@ -1685,6 +1702,7 @@ async function viewInverter() {
         <div class="field"><label for="mval">Giá trị ghi (cách nhau dấu phẩy)</label><input class="inp" id="mval" placeholder="vd 100"></div></div>
         <div class="row2 mt"><button class="btn" id="mread">Đọc</button><button class="btn dan" id="mwrite">Ghi…</button></div>
         <pre id="mout" class="small" style="white-space:pre-wrap;background:var(--card2);border-radius:12px;padding:10px;margin-top:10px;min-height:40px"></pre></div></details>` : ""}`;
+    hideBlank(el);
     bindMapRows(el);
     // MỚI (08/11/2026): chép nguyên danh sách thông số hãng trả (tên gốc, khoá, giá trị, đơn vị, nhóm) để đối chiếu
     const rb = $("#bRawAll");

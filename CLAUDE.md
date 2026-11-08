@@ -17,6 +17,7 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 - Giao diện ghi pin là **"Pin lưu trữ"** — không bao giờ ghi "INS.ESS".
 - Không vẽ lại xe/nhân vật/thiết kế có bản quyền (đã từ chối vẽ VinFast VF7 → dùng xe SUV coupe tự thiết kế).
 - **KHÔNG ĐOÁN BỪA (08/11/2026):** số liệu hiển thị phải là số thật hãng trả về hoặc đo được. Không tự suy/ước tính (vd lấy Tổng − năm trước, cộng dồn rồi "chặn" cho hợp lý). Chưa có số thật thì hiện "--" và ghi rõ lý do. Chưa xem được dữ liệu thô của API thì phải nói thẳng là chưa kiểm chứng, làm công cụ xem số liệu gốc (vd nút "Xem số liệu gốc từ hãng") để đối chiếu trước khi sửa — không đẩy lên trang thật một cách tính dựa trên phỏng đoán tên trường/ý nghĩa API.
+- **Ẩn số 0 / không có (08/11/2026):** ở Tổng quan, Pin & BMS, Biến tần: dòng thông số hãng không trả hoặc đang = 0 thì ẩn (`blank()` + `hideBlank(el)` trong ui.html), khác 0 thì hiện. Số lớn ở sơ đồ/tiêu đề thẻ, thẻ Tiền khai thác và tab Cài đặt không áp dụng. Nút "Chép toàn bộ thông số gốc" vẫn chép đủ cả số 0.
 - Chú thích code bằng tiếng Việt, ghi `MỚI (dd/mm/yyyy)` / `SỬA (dd/mm/yyyy)` kèm lý do.
 
 ## Cấu trúc
