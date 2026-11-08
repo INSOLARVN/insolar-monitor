@@ -1426,7 +1426,7 @@ function overviewHtml(d, status) {
     <div class="prow"><span>Trạng thái biến tần</span><b>${esc(viOpt(d.device.state) ?? "--")}</b></div>
     <div class="prow"><span>Nhiệt độ tản nhiệt / AC</span><b>${isNum(d.device.temp_dc) ? nf(d.device.temp_dc) + "°C" : "--"} / ${isNum(d.device.temp_ac) ? nf(d.device.temp_ac) + "°C" : "--"}</b></div>
     <div class="prow"><span>Thiết bị</span><b>${esc(d.device.profile_label || d.device.manufacturer || d.device.type || "--")}</b></div>
-    <div class="prow"><span>Cập nhật</span><b>${ago(d.updated)}</b></div></div></div></div>`;
+    <div class="prow"><span>${d.data_time ? "Hãng đo lúc" : "Cập nhật"}</span><b>${d.data_time ? new Date(d.data_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " · " + ago(d.data_time) : ago(d.updated)}</b></div></div></div></div>`;
 }
 async function viewOverview() {
   const draw = () => {
@@ -1663,7 +1663,7 @@ async function viewInverter() {
       <div class="prow"><span>Nhiệt độ DC / AC</span><b>${isNum(dv.temp_dc) ? nf(dv.temp_dc) + "°C" : "--"} / ${isNum(dv.temp_ac) ? nf(dv.temp_ac) + "°C" : "--"}</b></div>
       ${dv.clock ? `<div class="prow"><span>Đồng hồ inverter</span><b>${esc(dv.clock)}</b></div>` : ""}
       ${d.gateway ? `<div class="prow"><span>Gateway</span><b>${esc(d.gateway.id)} · fw ${esc(d.gateway.fw || "--")}${isNum(d.gateway.rssi) ? " · WiFi " + d.gateway.rssi + " dBm" : ""}</b></div>` : ""}
-      <div class="prow"><span>Cập nhật</span><b>${ago(d.updated)}</b></div></div></div>
+      <div class="prow"><span>${d.data_time ? "Hãng đo lúc" : "Cập nhật"}</span><b>${d.data_time ? new Date(d.data_time).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) + " · " + ago(d.data_time) : ago(d.updated)}</b></div></div></div>
       ${d.pv.strings.length ? `<div class="card mt"><h3>Đầu vào PV (MPPT)</h3><div class="scrollx"><table class="tbl"><tr><th>Chuỗi</th><th>Điện áp</th><th>Dòng</th><th>Công suất</th></tr>
         ${d.pv.strings.map((s) => `<tr><td><b>PV${s.n}</b></td><td class="cv">${fV(s.v)}</td><td class="cv">${fA(s.a)}</td><td class="cw">${fW(s.w)}</td></tr>`).join("")}
         <tr><td><b>Tổng</b></td><td></td><td></td><td class="cw"><b>${fW(d.pv.power)}</b></td></tr></table></div></div>` : ""}

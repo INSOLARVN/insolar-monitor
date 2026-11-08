@@ -262,6 +262,10 @@ async function stationDetailRaw(env, st, ctx) {
     const r = await ad.fetchDetail(creds, cached, st.ext_id);
     const d = fromCloudList(r.list, acc.brand, { serial: r.serial, manufacturer: ad.label, ...(r.device || {}) }, await fieldMaps(env, acc.brand, st.id));
     d.source = acc.brand;
+    // MỚI (08/11/2026): giờ biến tần đo/hãng ghi số liệu (khác giờ app lấy) — để đối chiếu với web/app hãng
+    { const t = r.time; const n = typeof t === "number" || /^\d+$/.test(String(t ?? "")) ? Number(t) : null;
+      const dt = t == null || t === "" ? null : n !== null ? new Date(n < 1e12 ? n * 1000 : n) : new Date(String(t).replace(" ", "T") + (/[zZ+]|[+-]\d\d:?\d\d$/.test(String(t)) ? "" : "+07:00"));
+      d.data_time = dt && !isNaN(dt) ? dt.toISOString() : null; }
     // MỚI (31/10/2026): cài đặt từ xa qua API điều khiển của cloud hãng (Deye Cloud, SolisCloud)
     if (r.settings?.length && ad.writeSetting) {
       d.settings = r.settings;

@@ -250,7 +250,7 @@ export default {
     list.push({ name: "Inverter Fault", value: alarms.length ? alarms.slice(0, 3).map((a) => "E" + a.errorCode).join(", ") : "Không", unit: "" });
     const model = MODEL[Number(dev.deviceModel)];
     const device = { type: model ? `SolaX ${model}` : undefined, firmware: [dev.armVersion, dev.dspVersion].filter(Boolean).join(" / ") || undefined };
-    return { list, serial: sn, time: inv.plantLocalTime, token: fresh, device };
+    return { list, serial: sn, time: inv.dataTime || inv.plantLocalTime, token: fresh, device }; // SỬA (08/11/2026): dataTime có múi giờ (UTC)
   },
 
   // MỚI (07/11/2026): cảnh báo đang diễn ra — GET /openapi/v2/alarm/page_alarm_info (alarmState 1 = đang xảy ra)
