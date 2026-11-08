@@ -79,7 +79,7 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 - FoxESS, Sigenergy, PV Pro/Inteless (01/11/2026) **chưa thử với tài khoản thật**.
 - Firmware gateway đã biên dịch nhưng chưa chạy trên mạch thật.
 - **Pin áp cao của người dùng (08/11/2026):** Deye áp cao + pin 64 cell, BMS áp cao hãng **"Top BMS"** (Trung Quốc, chưa rõ có phải Topband không; giao thức không công khai). Người dùng hay đọc/cài BMS bằng **USB RS485 (CH340) + phần mềm PC** của hãng; có nhiều USB RS485, có thể có USB CAN. Đã mua **ESP32-WROOM-32 DevKit V1 30 chân (CH340, Micro USB)** + **module RS485 3,3V (MAX3485)**.
-  - Kế hoạch phiên sau: người dùng cấp quyền dùng máy tính, mở sẵn phần mềm BMS; bắt USB RS485 thứ 2 **song song A–A, B–B** để nghe (SSCOM, HEX, cùng baud), đối chiếu màn hình phần mềm → dịch giao thức đọc **đủ 64 cell** → thêm vào firmware/`src/lib/bms.js` + trang Pin & BMS. Nếu có USB CAN: nghe (listen-only, không bật 120Ω) CAN pin↔Deye và CAN nội bộ tủ pin.
+  - Kế hoạch phiên sau: người dùng cấp quyền dùng máy tính, mở sẵn phần mềm BMS; BMS↔Deye nói chuyện qua **CAN**, PC đọc BMS qua **cổng RS485 riêng** → chỉ cần 1 USB: cài **phần mềm theo dõi cổng COM** trên PC (ghi gói gửi/nhận của phần mềm BMS trên cổng CH340), đối chiếu màn hình phần mềm → dịch giao thức đọc **đủ 64 cell** → thêm vào firmware/`src/lib/bms.js` + trang Pin & BMS. Nếu có USB CAN: nghe (listen-only, không bật 120Ω) CAN pin↔Deye và CAN nội bộ tủ pin.
   - Hiện `can.js` chỉ hiểu Pylontech **áp thấp**; chuẩn CAN pin áp cao **chưa có**. Firmware chỉ RS485 9600 8N1 cố định cho inverter, cổng BMS (GPIO26/27/25) chỉ JBD/Daly → cần thêm loại BMS mới (và có thể baud riêng).
 - Gắn tên miền riêng khi người dùng chọn (mở `routes` trong `wrangler.toml`).
 
