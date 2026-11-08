@@ -1664,6 +1664,9 @@ async function viewInverter() {
       if (!q && blank(p.value)) continue; // SỬA (08/11/2026): ẩn thông số hãng trả 0/trống (tìm kiếm thì vẫn hiện đủ)
       (groups[p.group] ??= []).push(p);
     }
+    // MỚI (08/11/2026): thông số số, khác 0, hãng có trả nhưng chưa được đưa vào ô nào của app (chỉ trạm cloud có cờ used)
+    const unmapped = (p) => p.used === false && !/^Gốc /.test(p.group || "") && typeof p.value === "number" && p.value !== 0;
+    const nUn = (d.params || []).filter(unmapped).length;
     const fmtVal = (p) => {
       let v = p.value;
       if (Array.isArray(v)) v = v.join(", ");
@@ -1691,9 +1694,10 @@ async function viewInverter() {
         ${d.hidden.map((h) => `<div class="prow"><span>${esc(hidLabel(h.field))}</span><b>${esc(String(h.value))} · ${esc(h.why)}</b></div>`).join("")}</div></div>` : ""}
       ${!SHARE ? `<button class="btn mt" id="bRawAll" style="width:100%">Chép toàn bộ thông số gốc từ hãng (${d.params.length})</button>` : ""}
       ${canMap() ? `<p class="small muted mt" style="margin-bottom:0">Ô nào hiện sai hoặc trống: bấm vào thông số bên dưới để gán nó vào đúng ô (áp dụng cho trạm, dòng máy hoặc cả hãng).</p>` : ""}
+      ${nUn ? `<p class="small mt" style="margin-bottom:0"><span class="tag y">chưa gán</span> ${nUn} thông số hãng có trả (khác 0) nhưng app chưa đưa vào ô hiển thị nào — đời máy này có thể đặt tên khác. Bấm vào để gán, hoặc chép gửi kỹ thuật thêm vào quy tắc chung.</p>` : ""}
       <div class="search mt"><input id="iq" placeholder="Tìm thông số…" value="${esc(S.invQ)}" aria-label="Tìm thông số"></div>
       ${Object.entries(groups).map(([g, list]) => `<details class="grp" ${q ? "open" : ""}><summary>${esc(viGroup(g))}<span class="tag">${list.length}</span></summary><div class="in plist">
-        ${list.map((p) => `<div class="prow" data-src="${esc(p.key || p.name)}"><span>${esc(vi(p.name))}</span><b>${fmtVal(p)}</b></div>`).join("")}</div></details>`).join("")}
+        ${list.map((p) => `<div class="prow" data-src="${esc(p.key || p.name)}"><span>${esc(vi(p.name))}${unmapped(p) ? ` <span class="tag y" title="Hãng có trả số khác 0 nhưng app chưa đưa vào ô hiển thị nào">chưa gán</span>` : ""}</span><b>${fmtVal(p)}</b></div>`).join("")}</div></details>`).join("")}
       ${S.st?.gateway_id && !SHARE ? `<details class="grp"><summary>Công cụ Modbus (nâng cao)</summary><div class="in">
         <p class="small muted" style="margin-top:0">Đọc trực tiếp thanh ghi qua gateway. Ghi thanh ghi thô có thể làm hỏng cấu hình — chỉ dùng khi biết rõ.</p>
         <div class="row2"><div class="field"><label for="mfc">Hàm</label><select class="inp" id="mfc"><option value="3">03 Holding</option><option value="4">04 Input</option></select></div>

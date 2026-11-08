@@ -324,10 +324,11 @@ const ph = (o, l) => { let x = o.phases.find((p) => p.l === l); if (!x) { x = { 
 // Deye "BMSSOH", "BMS Temp"…) → sau bảng CLOUD_MAP, dò tên linh hoạt cho các ô pin còn trống để trang Pin & BMS hiện đủ.
 function fillBattery(d) {
   // SỬA (08/11/2026): bỏ thông số của PIN THỨ 2 (Deye "Lithium Battery2SOH" = 0 khi không lắp pin 2 → từng hiện SOH 0% sai)
-  const b = d.battery, P = d.params.map((p) => ({ ...p, k: (p.name + " " + (p.key || "")).toLowerCase(), v: n(p.value) })).filter((p) => !/(battery|bat|li ?bat)[ _-]?2|battery2|bat2/.test(p.k) && !/^Gốc /.test(p.group || ""));
+  const b = d.battery, P = d.params.map((p) => ({ ...p, o: p, k: (p.name + " " + (p.key || "")).toLowerCase(), v: n(p.value) })).filter((p) => !/(battery|bat|li ?bat)[ _-]?2|battery2|bat2/.test(p.k) && !/^Gốc /.test(p.group || ""));
   const isBat = (k) => /batt|bms|\bbat\b|pin/.test(k);
-  const find = (test, numeric = true) => { const x = P.find((p) => test(p.k, p) && (!numeric || p.v !== null)); return x ? (numeric ? x.v : x.value) : null; };
-  const set = (f, v) => { if ((b[f] === null || b[f] === undefined) && v !== null && v !== undefined && v !== "") b[f] = v; };
+  let last = null; // MỚI (08/11/2026): nhớ thông số vừa tìm thấy để đánh dấu "đã dùng"
+  const find = (test, numeric = true) => { const x = P.find((p) => test(p.k, p) && (!numeric || p.v !== null)); last = x || null; return x ? (numeric ? x.v : x.value) : null; };
+  const set = (f, v) => { if ((b[f] === null || b[f] === undefined) && v !== null && v !== undefined && v !== "") { b[f] = v; if (last) last.o.used = true; } };
   set("soc", find((k) => /\bsoc\b|state of charge/.test(k) && !/low|min|max|limit|cut|shutdown|restart|back/.test(k)));
   set("soh", find((k) => /soh\b|state of health/.test(k)));
   set("temp", find((k, p) => /temp/.test(k) && isBat(k) && !/(max|min|high|low|protect|limit|mos)/.test(k) && (p.v > -40 && p.v < 120)));
@@ -366,6 +367,7 @@ export function applyMaps(d, maps) {
     if (done.has(m.field)) continue; // trạm > dòng máy > hãng
     const p = by.get(String(m.src).toLowerCase());
     if (!p) continue;
+    p.used = true;
     const num = n(p.value);
     setField(d, m.field, num === null ? p.value : Math.round(num * (Number(m.factor) || 1) * 1000) / 1000);
     done.add(m.field);
@@ -388,11 +390,13 @@ export function fromCloudList(list, source, extra = {}, maps = null) {
     const name = String(it.name || it.key || "").trim().replace(/\s+/g, " ");
     const num = n(it.value);
     const val = num ?? it.value;
+    let hit = false;
     for (const [re, fn] of CLOUD_MAP) {
       const mm = name.match(re);
-      if (mm) { try { fn(d, val, mm, name); } catch {} break; }
+      if (mm) { try { fn(d, val, mm, name); hit = true; } catch {} break; }
     }
-    d.params.push({ key: it.key || name, name, group: it.group || "Thông số", value: val, uom: it.unit || null });
+    // MỚI (08/11/2026): used = thông số đã được đưa vào ô hiển thị của app (để tab Biến tần đánh dấu cái "chưa gán")
+    d.params.push({ key: it.key || name, name, group: it.group || "Thông số", value: val, uom: it.unit || null, used: hit });
   }
   fillBattery(d);
   d.device.model_key = modelOf(d);

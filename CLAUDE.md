@@ -67,6 +67,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 17. **Dữ liệu thật PV Pro (Chú Nam Đông Sơn, 08/11/2026):** `api/v1/plants` (danh sách) có `pac, etoday, etotal, updateAt` nhưng **không** có kWp/toạ độ; `api/v1/plant/{id}` có `totalPower` (kWp = 12), `lat/lon`, `realtime.emonth/eyear/etotal` → adapter gọi thêm chi tiết từng trạm (≤ 40/lượt) để lấy kWp, toạ độ, tháng/năm. Nhãn hãng hiển thị "PV Pro".
 
+18. **Đánh dấu "chưa gán" (08/11/2026):** `fromCloudList` đặt `params[].used` (khớp `CLOUD_MAP`, `fillBattery` hoặc gán của người dùng). Tab Biến tần gắn nhãn "chưa gán" cho thông số số, khác 0, `used === false` (bỏ nhóm "Gốc …") + dòng tổng số ở đầu → gặp đời máy/tên mới thì thấy ngay để gán hoặc thêm vào quy tắc chung. Quy tắc gán là CHUNG theo tên thông số của hãng (mọi trạm/dòng máy trả cùng tên đều áp dụng), trạm thật chỉ dùng để kiểm nghĩa của tên.
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.
