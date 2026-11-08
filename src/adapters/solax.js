@@ -83,7 +83,7 @@ function toList(creds, inv, bat, ex = {}) {
   // Áp tải: SolaX không có áp/dòng tải riêng → dùng điện áp cổng EPS nếu có, không thì điện áp AC của inverter
   for (let i = 1; i <= 3; i++) {
     const ev = num(inv[`EPSL${i}Voltage`]);
-    add(`Load Voltage L${i}`, ev ? ev : num(inv[`acVoltage${i}`]), "V");
+    add(`Load Voltage L${i}`, ev, "V"); // SỬA (08/11/2026): không lấy áp AC biến tần thay cho áp tải khi EPS = 0
   }
   for (let i = 1; i <= 3; i++) add(`EPS Power L${i}`, toW(creds, inv[`EPSL${i}ActivePower`]), "W");
   // Công suất AC từng pha + công suất tổng của inverter

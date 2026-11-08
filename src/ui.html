@@ -1348,7 +1348,8 @@ function hidLabel(f) {
 }
 function phaseRows(phases, label) {
   if (!phases?.length) return [[label, "--"]];
-  return phases.map((p) => [`${label}${phases.length > 1 ? " L" + p.l : ""}`, `${fV(p.v)} / ${fA(p.a)}`, "cv"]);
+  // SỬA (08/11/2026): hãng có trả công suất pha (vd Deye "Load Phase Power A/B/C") thì hiện thêm
+  return phases.map((p) => [`${label}${phases.length > 1 ? " L" + p.l : ""}`, `${fV(p.v)} / ${fA(p.a)}${isNum(p.w) ? " · " + fW(p.w) : ""}`, "cv"]);
 }
 function revenueHtml(d) {
   const st = S.st || {}, E = S.energy || {};

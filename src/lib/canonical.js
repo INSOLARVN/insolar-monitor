@@ -223,7 +223,7 @@ function finish(d) {
   const live = (o) => o.phases.filter((p) => !(n(p.v) !== null && p.v < 50 && !n(p.a) && !n(p.w)));
   // MỚI (08/11/2026): mọi số của hãng bị ẩn đều ghi vào d.hidden (ô, giá trị gốc, lý do) để giao diện hiện cho người dùng kiểm tra
   const hide = (field, value, why) => { (d.hidden ||= []).push({ field, value, why }); };
-  const fixPhases = (o, total, ref, nm) => {
+  const fixPhases = (o, total, nm) => {
     const ps = live(o);
     if (!ps.length) return;
     // SỬA (08/11/2026): không ghi đè số pha bằng số tổng / số tự tính nữa. Số pha của hãng lệch hẳn thực tế → để trống ("--").
@@ -231,17 +231,10 @@ function finish(d) {
       const p = ps[0];
       if (n(p.w) !== null && Math.abs(p.w - total) > Math.max(150, 0.25 * Math.abs(total))) { hide(`${nm}.p${p.l}.w`, p.w, `lệch tổng ${Math.round(total)} W`); p.w = null; }
     }
-    for (const p of ps) {
-      // 1 pha mà hãng không trả công suất pha → chỉ dùng công suất tổng để KIỂM TRA dòng (không ghi vào ô công suất pha)
-      const pw = n(p.w) !== null ? p.w : ps.length === 1 && n(total) !== null ? total : null;
-      if (!(n(p.v) > 50) || pw === null) continue;
-      const va = n(p.a) === null ? null : Math.abs(p.a) * p.v, w = Math.abs(pw);
-      const r = ref && ref.find((q) => q.l === p.l);
-      const copy = r && n(r.a) !== null && n(p.a) !== null && Math.abs(p.a) > 1 && Math.abs(Math.abs(p.a) - Math.abs(r.a)) <= Math.max(0.3, 0.05 * Math.abs(r.a)) && Math.abs(Math.abs(r.a) * p.v - w) > 200;
-      if (va !== null && ((w > 100 && va < 0.85 * w) || va > 2 * w + 250 || copy)) { hide(`${nm}.p${p.l}.a`, p.a, copy ? "trùng dòng đầu ra biến tần" : `không khớp công suất ${Math.round(pw)} W (áp × dòng = ${Math.round(va)} W)`); p.a = null; } // dòng hãng trả không khớp công suất (thường là dòng biến tần) → để trống
-    }
+    // SỬA (08/11/2026): BỎ ẩn/tính lại dòng pha. Dữ liệu thật Deye (83LHP): lưới L2 11 W mà 1,35 A là ĐÚNG vì có 55 Var phản kháng
+    // (áp × dòng là công suất biểu kiến, không phải công suất thực) → dòng hãng trả luôn được giữ nguyên.
   };
-  // Lưới: dòng pha hãng trả mà không khớp công suất lưới (thường là dòng biến tần, vd lưới 141 W mà 16 A) → để trống, không tự tính
+  // Đầu ra biến tần thiếu điện áp pha → lấy áp lưới cùng pha (cùng điểm đo)
   for (const p of d.output.phases) {
     const x = g.phases.find((q) => q.l === p.l);
     if (x && !n(p.v)) p.v = x.v;
@@ -249,8 +242,8 @@ function finish(d) {
   // SỬA (03/11/2026): tải nhiều pha mà tổng công suất các pha lệch hẳn tổng tải (vd. 145 W so với 6,97 kW) → đó là cổng UPS, không phải tải nhà → bỏ số pha
   { const ps = live(d.load).filter((p) => n(p.w) !== null), tot = n(d.load.power);
     if (ps.length > 1 && tot !== null) { const sum = ps.reduce((t, p) => t + p.w, 0); if (Math.abs(sum - tot) > Math.max(300, 0.3 * Math.abs(tot))) for (const p of ps) { hide(`load.p${p.l}.w`, p.w, `tổng các pha ${Math.round(sum)} W lệch tải ${Math.round(tot)} W (thường là cổng UPS)`); if (n(p.a) !== null) hide(`load.p${p.l}.a`, p.a, "cùng nhóm cổng UPS"); p.w = null; p.a = null; } } }
-  fixPhases(d.load, d.load.power, null, "load");
-  fixPhases(g, g.power, d.output.phases, "grid");
+  fixPhases(d.load, d.load.power, "load");
+  fixPhases(g, g.power, "grid");
   return d;
 }
 
@@ -271,13 +264,18 @@ const CLOUD_MAP = [
   [/^(total )?(dc|solar|pv) (input )?power$|^total solar power$|^production power$/i, (d, v) => (d.pv.power = v)],
   [/^(daily|today('s)?) production|^daily production \(active\)$|^cumulative production \(active\)$/i, (d, v, mm, name) => (/cumulative/i.test(name) ? (d.pv.total_kwh = v) : (d.pv.today_kwh = v))],
   [/^total production|^cumulative production$/i, (d, v) => (d.pv.total_kwh = v)],
-  [/^ac voltage r\/u\/a$|^grid voltage l1$|^ac voltage l1$|^grid voltage$/i, (d, v) => (ph(d.grid, 1).v = v)],
-  [/^ac voltage s\/v\/b$|^grid voltage l2$|^ac voltage l2$/i, (d, v) => (ph(d.grid, 2).v = v)],
-  [/^ac voltage t\/w\/c$|^grid voltage l3$|^ac voltage l3$/i, (d, v) => (ph(d.grid, 3).v = v)],
+  // SỬA (08/11/2026): dữ liệu thật Deye 83LHP — "AC Voltage RUA/SVB/TWC" (229,6/227,6/240,3) là áp ĐẦU RA biến tần, khác "Grid Voltage L1–L3"
+  // (229,3/228,1/240,8) → AC Voltage vào output, chỉ "Grid Voltage" mới là áp lưới
+  [/^grid voltage l1$|^grid voltage$/i, (d, v) => (ph(d.grid, 1).v = v)],
+  [/^grid voltage l2$/i, (d, v) => (ph(d.grid, 2).v = v)],
+  [/^grid voltage l3$/i, (d, v) => (ph(d.grid, 3).v = v)],
+  [/^ac voltage (r\/u\/a|rua|l1)$/i, (d, v) => (ph(d.output, 1).v = v)],
+  [/^ac voltage (s\/v\/b|svb|l2)$/i, (d, v) => (ph(d.output, 2).v = v)],
+  [/^ac voltage (t\/w\/c|twc|l3)$/i, (d, v) => (ph(d.output, 3).v = v)],
   // SỬA (01/11/2026): "AC current R/S/T" của cloud là dòng đầu ra BIẾN TẦN, không phải dòng điện lưới → đưa vào output
-  [/^ac current r\/u\/a$|^ac current l1$/i, (d, v) => (ph(d.output, 1).a = v)],
-  [/^ac current s\/v\/b$|^ac current l2$/i, (d, v) => (ph(d.output, 2).a = v)],
-  [/^ac current t\/w\/c$|^ac current l3$/i, (d, v) => (ph(d.output, 3).a = v)],
+  [/^ac current (r\/u\/a|rua|l1)$/i, (d, v) => (ph(d.output, 1).a = v)],
+  [/^ac current (s\/v\/b|svb|l2)$/i, (d, v) => (ph(d.output, 2).a = v)],
+  [/^ac current (t\/w\/c|twc|l3)$/i, (d, v) => (ph(d.output, 3).a = v)],
   [/^grid power l(\d)$/i, (d, v, mm) => (ph(d.grid, +mm[1]).w = v)], // MỚI (01/11/2026)
   [/^grid current l1$/i, (d, v) => (ph(d.grid, 1).a = v)],
   [/^grid current l2$/i, (d, v) => (ph(d.grid, 2).a = v)],
@@ -314,8 +312,7 @@ const CLOUD_MAP = [
   // MỚI (31/10/2026): tên thông số thật của Deye Cloud (đối chiếu dữ liệu trạm thật) — trước đây không khớp nên hiện "--"
   [/^pv daily power generation|^daily active production$/i, (d, v) => (d.pv.today_kwh = v)],
   [/^pv cumulative power generation|^total active production$/i, (d, v) => (d.pv.total_kwh = v)],
-  [/^ac voltage rua$|^grid voltage l1l2$/i, (d, v) => (ph(d.grid, 1).v = v)],
-  [/^ac current rua$/i, (d, v) => (ph(d.output, 1).a = v)], // SỬA (01/11/2026): dòng biến tần, không phải dòng lưới
+  [/^grid voltage l1l2$/i, (d, v) => (ph(d.grid, 1).v = v)],
   [/^grid current l1l2$/i, (d, v) => (ph(d.grid, 1).a = v)],
   [/^daily grid feed in$/i, (d, v) => (d.grid.today_export = v)],
   [/^cumulative grid feed in$/i, (d, v) => (d.grid.total_export = v)],
@@ -341,7 +338,8 @@ const ph = (o, l) => { let x = o.phases.find((p) => p.l === l); if (!x) { x = { 
 // MỚI (07/11/2026): mỗi hãng/đời máy đặt tên thông số pin khác nhau (Solarman "SoH", "Temperature- Battery", "Total Charging Energy",
 // Deye "BMSSOH", "BMS Temp"…) → sau bảng CLOUD_MAP, dò tên linh hoạt cho các ô pin còn trống để trang Pin & BMS hiện đủ.
 function fillBattery(d) {
-  const b = d.battery, P = d.params.map((p) => ({ ...p, k: (p.name + " " + (p.key || "")).toLowerCase(), v: n(p.value) }));
+  // SỬA (08/11/2026): bỏ thông số của PIN THỨ 2 (Deye "Lithium Battery2SOH" = 0 khi không lắp pin 2 → từng hiện SOH 0% sai)
+  const b = d.battery, P = d.params.map((p) => ({ ...p, k: (p.name + " " + (p.key || "")).toLowerCase(), v: n(p.value) })).filter((p) => !/(battery|bat|li ?bat)[ _-]?2|battery2|bat2/.test(p.k));
   const isBat = (k) => /batt|bms|\bbat\b|pin/.test(k);
   const find = (test, numeric = true) => { const x = P.find((p) => test(p.k, p) && (!numeric || p.v !== null)); return x ? (numeric ? x.v : x.value) : null; };
   const set = (f, v) => { if ((b[f] === null || b[f] === undefined) && v !== null && v !== undefined && v !== "") b[f] = v; };
