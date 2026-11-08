@@ -221,13 +221,15 @@ function finish(d) {
   //   thay cho dòng lưới (lưới 18 W mà 7,9 A; lưới 26 W mà 22,8 A). PV Pro còn trả công suất/dòng tải pha là cổng UPS (-3 W) trong khi tải nhà 5,3 kW.
   //   → Pha "thật" = pha có áp > 50 V. Hệ 1 pha: công suất pha lệch hẳn tổng thì lấy tổng. Dòng lệch hẳn P/U (quá nhỏ HOẶC quá lớn) thì tính lại từ P/U.
   const live = (o) => o.phases.filter((p) => !(n(p.v) !== null && p.v < 50 && !n(p.a) && !n(p.w)));
-  const fixPhases = (o, total, ref) => {
+  // MỚI (08/11/2026): mọi số của hãng bị ẩn đều ghi vào d.hidden (ô, giá trị gốc, lý do) để giao diện hiện cho người dùng kiểm tra
+  const hide = (field, value, why) => { (d.hidden ||= []).push({ field, value, why }); };
+  const fixPhases = (o, total, ref, nm) => {
     const ps = live(o);
     if (!ps.length) return;
     // SỬA (08/11/2026): không ghi đè số pha bằng số tổng / số tự tính nữa. Số pha của hãng lệch hẳn thực tế → để trống ("--").
     if (ps.length === 1 && n(total) !== null) {
       const p = ps[0];
-      if (n(p.w) !== null && Math.abs(p.w - total) > Math.max(150, 0.25 * Math.abs(total))) p.w = null;
+      if (n(p.w) !== null && Math.abs(p.w - total) > Math.max(150, 0.25 * Math.abs(total))) { hide(`${nm}.p${p.l}.w`, p.w, `lệch tổng ${Math.round(total)} W`); p.w = null; }
     }
     for (const p of ps) {
       // 1 pha mà hãng không trả công suất pha → chỉ dùng công suất tổng để KIỂM TRA dòng (không ghi vào ô công suất pha)
@@ -236,7 +238,7 @@ function finish(d) {
       const va = n(p.a) === null ? null : Math.abs(p.a) * p.v, w = Math.abs(pw);
       const r = ref && ref.find((q) => q.l === p.l);
       const copy = r && n(r.a) !== null && n(p.a) !== null && Math.abs(p.a) > 1 && Math.abs(Math.abs(p.a) - Math.abs(r.a)) <= Math.max(0.3, 0.05 * Math.abs(r.a)) && Math.abs(Math.abs(r.a) * p.v - w) > 200;
-      if (va !== null && ((w > 100 && va < 0.85 * w) || va > 2 * w + 250 || copy)) p.a = null; // dòng hãng trả không khớp công suất (thường là dòng biến tần) → để trống
+      if (va !== null && ((w > 100 && va < 0.85 * w) || va > 2 * w + 250 || copy)) { hide(`${nm}.p${p.l}.a`, p.a, copy ? "trùng dòng đầu ra biến tần" : `không khớp công suất ${Math.round(pw)} W (áp × dòng = ${Math.round(va)} W)`); p.a = null; } // dòng hãng trả không khớp công suất (thường là dòng biến tần) → để trống
     }
   };
   // Lưới: dòng pha hãng trả mà không khớp công suất lưới (thường là dòng biến tần, vd lưới 141 W mà 16 A) → để trống, không tự tính
@@ -246,9 +248,9 @@ function finish(d) {
   }
   // SỬA (03/11/2026): tải nhiều pha mà tổng công suất các pha lệch hẳn tổng tải (vd. 145 W so với 6,97 kW) → đó là cổng UPS, không phải tải nhà → bỏ số pha
   { const ps = live(d.load).filter((p) => n(p.w) !== null), tot = n(d.load.power);
-    if (ps.length > 1 && tot !== null) { const sum = ps.reduce((t, p) => t + p.w, 0); if (Math.abs(sum - tot) > Math.max(300, 0.3 * Math.abs(tot))) for (const p of ps) { p.w = null; p.a = null; } } }
-  fixPhases(d.load, d.load.power, null);
-  fixPhases(g, g.power, d.output.phases);
+    if (ps.length > 1 && tot !== null) { const sum = ps.reduce((t, p) => t + p.w, 0); if (Math.abs(sum - tot) > Math.max(300, 0.3 * Math.abs(tot))) for (const p of ps) { hide(`load.p${p.l}.w`, p.w, `tổng các pha ${Math.round(sum)} W lệch tải ${Math.round(tot)} W (thường là cổng UPS)`); if (n(p.a) !== null) hide(`load.p${p.l}.a`, p.a, "cùng nhóm cổng UPS"); p.w = null; p.a = null; } } }
+  fixPhases(d.load, d.load.power, null, "load");
+  fixPhases(g, g.power, d.output.phases, "grid");
   return d;
 }
 

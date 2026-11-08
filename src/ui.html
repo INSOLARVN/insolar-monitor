@@ -1341,6 +1341,11 @@ function ring(value, max, color, center, sub, label) {
   <text x="42" y="${sub ? 42 : 47}" text-anchor="middle" font-size="14" font-weight="800" fill="var(--ink)" font-family="var(--font)">${center}</text>
   ${sub ? `<text x="42" y="57" text-anchor="middle" font-size="9.5" font-weight="600" fill="var(--muted)" font-family="var(--font)">${sub}</text>` : ""}</svg><div class="lb">${label}</div></div>`;
 }
+// MỚI (08/11/2026): tên dễ đọc cho ô bị ẩn (vd "grid.p1.a" → "Lưới L1 – dòng")
+function hidLabel(f) {
+  const [a, b, c] = String(f).split(".");
+  return `${{ grid: "Lưới", load: "Tải", output: "Đầu ra" }[a] || a} ${/^p\d$/.test(b) ? "L" + b.slice(1) : b} – ${{ a: "dòng", w: "công suất", v: "điện áp" }[c] || c || ""}`;
+}
 function phaseRows(phases, label) {
   if (!phases?.length) return [[label, "--"]];
   return phases.map((p) => [`${label}${phases.length > 1 ? " L" + p.l : ""}`, `${fV(p.v)} / ${fA(p.a)}`, "cv"]);
@@ -1664,6 +1669,9 @@ async function viewInverter() {
       ${ph("Lưới điện", d.grid.phases, `<div class="plist mt"><div class="prow"><span>Tần số lưới</span><b>${isNum(d.grid.freq) ? nf(d.grid.freq, 2) + " Hz" : "--"}</b></div>${isNum(d.grid.pf) && d.grid.pf ? `<div class="prow"><span>Hệ số công suất</span><b>${nf(d.grid.pf, 3)}</b></div>` : ""}<div class="prow"><span>Tổng công suất lưới</span><b class="cw">${fW(d.grid.power)}</b></div></div>`)}
       ${ph("Đầu ra inverter", d.output.phases, `<div class="plist mt"><div class="prow"><span>Tần số đầu ra</span><b>${isNum(d.output.freq) ? nf(d.output.freq, 2) + " Hz" : "--"}</b></div><div class="prow"><span>Công suất inverter</span><b class="cw">${fW(d.output.power)}</b></div></div>`)}
       ${ph("Tải", d.load.phases)}
+      ${d.hidden?.length ? `<div class="card mt"><h3>Số hãng trả đã bị ẩn</h3><p class="small muted" style="margin-top:0">Các số dưới đây hãng có trả nhưng không khớp nhau nên không đưa lên ô hiển thị (để "--"). MỚI 08/11/2026.</p><div class="plist">
+        ${d.hidden.map((h) => `<div class="prow"><span>${esc(hidLabel(h.field))}</span><b>${esc(String(h.value))} · ${esc(h.why)}</b></div>`).join("")}</div></div>` : ""}
+      ${!SHARE ? `<button class="btn mt" id="bRawAll" style="width:100%">Chép toàn bộ thông số gốc từ hãng (${d.params.length})</button>` : ""}
       ${canMap() ? `<p class="small muted mt" style="margin-bottom:0">Ô nào hiện sai hoặc trống: bấm vào thông số bên dưới để gán nó vào đúng ô (áp dụng cho trạm, dòng máy hoặc cả hãng).</p>` : ""}
       <div class="search mt"><input id="iq" placeholder="Tìm thông số…" value="${esc(S.invQ)}" aria-label="Tìm thông số"></div>
       ${Object.entries(groups).map(([g, list]) => `<details class="grp" ${q ? "open" : ""}><summary>${esc(viGroup(g))}<span class="tag">${list.length}</span></summary><div class="in plist">
@@ -1677,6 +1685,12 @@ async function viewInverter() {
         <div class="row2 mt"><button class="btn" id="mread">Đọc</button><button class="btn dan" id="mwrite">Ghi…</button></div>
         <pre id="mout" class="small" style="white-space:pre-wrap;background:var(--card2);border-radius:12px;padding:10px;margin-top:10px;min-height:40px"></pre></div></details>` : ""}`;
     bindMapRows(el);
+    // MỚI (08/11/2026): chép nguyên danh sách thông số hãng trả (tên gốc, khoá, giá trị, đơn vị, nhóm) để đối chiếu
+    const rb = $("#bRawAll");
+    if (rb) rb.onclick = async () => {
+      const txt = [`${S.st?.name || ""} · ${d.source || ""} · ${d.device?.model_key || ""}`, ...d.params.map((p) => `${p.name}\t${p.key || ""}\t${p.value ?? ""}\t${p.uom || ""}\t${p.group || ""}`), ...(d.hidden || []).map((h) => `ẨN\t${h.field}\t${h.value}\t${h.why}`)].join("\n");
+      try { await navigator.clipboard.writeText(txt); toast("Đã chép " + d.params.length + " thông số"); } catch { openSheet(`<h2>Thông số gốc</h2><pre class="small" style="white-space:pre-wrap;max-height:60vh;overflow:auto;user-select:text">${esc(txt)}</pre><button class="btn mt" onclick="closeSheet()">Đóng</button>`); }
+    };
     const iq = $("#iq");
     let ic = false; // SỬA (07/11/2026): bỏ qua lúc bộ gõ tiếng Việt đang ghép dấu
     iq.addEventListener("compositionstart", () => (ic = true));
