@@ -223,6 +223,15 @@ export default {
     let alarms = [];
     try { alarms = (await allPages(creds, token, "/openapi/v2/alarm/page_alarm_info", { plantId, deviceSn: sn, alarmState: "1" })) || []; } catch {}
     const list = toList(creds, inv, bat, ex);
+    // MỚI (08/11/2026): đưa NGUYÊN các trường SolaX trả về (inverter, pin, trạm) vào danh sách, nhóm "Gốc SolaX …",
+    // để người dùng chép đối chiếu / tự gán vào ô hiển thị — không đoán tên trường.
+    const flat = (o, pre, grp, depth = 0) => {
+      for (const [k, v] of Object.entries(o || {})) {
+        if (v !== null && typeof v === "object" && !Array.isArray(v) && depth < 2) flat(v, `${pre}${k}.`, grp, depth + 1);
+        else list.push({ key: `${pre}${k}`, name: `${pre}${k}`, value: Array.isArray(v) ? JSON.stringify(v).slice(0, 300) : v, unit: "", group: grp });
+      }
+    };
+    flat(inv, "inv.", "Gốc SolaX – inverter"); flat(bat, "bat.", "Gốc SolaX – pin"); flat(rt, "plant.", "Gốc SolaX – trạm");
     list.push({ name: "Inverter Alarm", value: alarms.length ? alarms.slice(0, 3).map((a) => a.alarmName).join("; ") : "Không", unit: "" });
     list.push({ name: "Inverter Fault", value: alarms.length ? alarms.slice(0, 3).map((a) => "E" + a.errorCode).join(", ") : "Không", unit: "" });
     const model = MODEL[Number(dev.deviceModel)];

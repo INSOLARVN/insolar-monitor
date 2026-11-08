@@ -344,7 +344,7 @@ const ph = (o, l) => { let x = o.phases.find((p) => p.l === l); if (!x) { x = { 
 // Deye "BMSSOH", "BMS Temp"…) → sau bảng CLOUD_MAP, dò tên linh hoạt cho các ô pin còn trống để trang Pin & BMS hiện đủ.
 function fillBattery(d) {
   // SỬA (08/11/2026): bỏ thông số của PIN THỨ 2 (Deye "Lithium Battery2SOH" = 0 khi không lắp pin 2 → từng hiện SOH 0% sai)
-  const b = d.battery, P = d.params.map((p) => ({ ...p, k: (p.name + " " + (p.key || "")).toLowerCase(), v: n(p.value) })).filter((p) => !/(battery|bat|li ?bat)[ _-]?2|battery2|bat2/.test(p.k));
+  const b = d.battery, P = d.params.map((p) => ({ ...p, k: (p.name + " " + (p.key || "")).toLowerCase(), v: n(p.value) })).filter((p) => !/(battery|bat|li ?bat)[ _-]?2|battery2|bat2/.test(p.k) && !/^Gốc /.test(p.group || ""));
   const isBat = (k) => /batt|bms|\bbat\b|pin/.test(k);
   const find = (test, numeric = true) => { const x = P.find((p) => test(p.k, p) && (!numeric || p.v !== null)); return x ? (numeric ? x.v : x.value) : null; };
   const set = (f, v) => { if ((b[f] === null || b[f] === undefined) && v !== null && v !== undefined && v !== "") b[f] = v; };
