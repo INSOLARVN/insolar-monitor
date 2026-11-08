@@ -64,6 +64,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 16. **Deye `station/latest` thật (Kim Chung, 08/11/2026):** `chargePower` = `batteryPower` = -8.557 khi sạc, `dischargePower` null → dùng `batteryPower` (âm = sạc). `wirePower` -15 (quá nhỏ, **chưa xác định dấu** — cần gửi lại lúc mua/bán nhiều), `gridPower` null, không có `generationTotal`. `/station/history` granularity 2 (ngày) có `year/month/day`, `generationValue`; granularity 3 phải trong 12 tháng (`endAt` = `YYYY-12`). Lịch sử tháng trả rỗng thì tháng = "--" (không còn ra 0).
 
+17. **Dữ liệu thật PV Pro (Chú Nam Đông Sơn, 08/11/2026):** `api/v1/plants` (danh sách) có `pac, etoday, etotal, updateAt` nhưng **không** có kWp/toạ độ; `api/v1/plant/{id}` có `totalPower` (kWp = 12), `lat/lon`, `realtime.emonth/eyear/etotal` → adapter gọi thêm chi tiết từng trạm (≤ 40/lượt) để lấy kWp, toạ độ, tháng/năm. Nhãn hãng hiển thị "PV Pro".
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.

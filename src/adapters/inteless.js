@@ -165,13 +165,18 @@ export default {
       for (const inv of mine.slice(0, 10)) {
         try { const f = fromFlow(await get(host, token, `api/v1/inverter/${inv.sn}/flow`)); add("pv", f.pv); add("load", f.load); add("bat", f.bat); add("grid", f.grid); if (f.soc !== null) sum.soc = f.soc; } catch {}
       }
+      // MỚI (08/11/2026): dữ liệu thật (Chú Nam Đông Sơn): danh sách trạm KHÔNG có kWp/toạ độ; chi tiết api/v1/plant/{id} có
+      // totalPower (kWp), lat/lon, realtime.emonth / realtime.eyear (sản lượng tháng/năm hãng tính) → lấy thêm (tối đa 40 trạm/lượt)
+      let pd = null;
+      if (out.length < 40) { try { pd = await get(host, token, `api/v1/plant/${p.id}`, { lan: "en", id: p.id }); } catch {} }
       const t = isoFromAny(p.updateAt);
       // status của plant: 1 = bình thường, 2 = cảnh báo/lỗi, 0/3 = ngoại tuyến (theo Sunsynk Connect)
       const st = Number(p.status);
       let status = st === 0 || st === 3 ? "offline" : statusFromTime(t);
       if (st === 2) status = "alarm";
       out.push(station({
-        ext_id: p.id, name: p.name, address: p.address, lat: p.lat, lon: p.lon, capacity_kwp: num(p.totalPower), status,
+        ext_id: p.id, name: p.name, address: p.address, lat: pd?.lat ?? p.lat, lon: pd?.lon ?? p.lon, capacity_kwp: num(pd?.totalPower ?? p.totalPower), status,
+        month_kwh: num(pd?.realtime?.emonth), year_kwh: num(pd?.realtime?.eyear),
         pv_power_w: sum.pv ?? num(p.pac), load_power_w: sum.load, grid_power_w: sum.grid, battery_power_w: sum.bat, battery_soc: sum.soc,
         today_kwh: num(p.etoday), total_kwh: num(p.etotal), data_time: t,
       }));
