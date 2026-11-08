@@ -1350,8 +1350,9 @@ function revenueHtml(d) {
   const price = isNum(st.price_kwh) ? st.price_kwh : PRICE_DEF;
   const today = isNum(d.pv.today_kwh) ? d.pv.today_kwh : E.today;
   const month = isNum(E.month) || isNum(today) ? Math.max(E.month || 0, today || 0) : null; // dữ liệu lưu chưa đủ tháng thì ít nhất bằng hôm nay
-  const year = isNum(E.year) || isNum(month) ? Math.max(E.year || 0, month || 0) : null;
   const total = isNum(d.pv.total_kwh) ? d.pv.total_kwh : E.total;
+  let year = isNum(E.year) || isNum(month) ? Math.max(E.year || 0, month || 0) : null;
+  if (isNum(year) && isNum(total) && total > 0 && year > total) year = total; // SỬA (08/11/2026): năm không thể vượt tổng
   const c = (t, k) => `<div class="echip"><span>${t}</span><b class="ce">${fVnd(isNum(k) ? k * price : null)}</b><small class="muted" style="display:block">${fK(k)}</small></div>`;
   return `<div class="card mt wide"><h3>${ico("chart", 'style="width:18px;height:18px;color:var(--e)"')} Tiền khai thác
     ${SHARE ? `<span class="tag">${nf(price, 0)} đ/kWh</span>` : `<button class="tag" id="bPrice" style="cursor:pointer;border:0;font:inherit;font-size:11px">${nf(price, 0)} đ/kWh${isNum(st.price_kwh) ? "" : " (mặc định)"} ✎</button>`}</h3>
@@ -1361,7 +1362,7 @@ function priceSheet() {
   const s = S.st;
   openSheet(`<h2>Giá điện tính tiền khai thác</h2>
     <div class="field"><label for="p_v">Giá (đ/kWh)</label><input class="inp" id="p_v" inputmode="decimal" placeholder="${PRICE_DEF}" value="${esc(s.price_kwh ?? "")}"></div>
-    <p class="small muted" style="margin:0 0 8px">Tiền = sản lượng PV × giá. Để trống dùng mặc định ${nf(PRICE_DEF, 0)} đ/kWh. Tháng/năm cộng từ dữ liệu app đã lưu.</p>
+    <p class="small muted" style="margin:0 0 8px">Tiền = sản lượng PV × giá. Để trống dùng mặc định ${nf(PRICE_DEF, 0)} đ/kWh. Tháng/năm lấy theo sản lượng từng tháng trên cloud hãng.</p>
     <div class="row2 mt"><button class="btn" id="p_x">Đóng</button><button class="btn pri" id="p_s">Lưu</button></div>`);
   $("#p_x").onclick = closeSheet;
   $("#p_s").onclick = async () => {

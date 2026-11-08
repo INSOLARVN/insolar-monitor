@@ -301,33 +301,40 @@ async function cloudHistory(env, st, range, d, ctx) {
   } catch (e) { return { error: String(e.message || e) }; }
 }
 
+// SỬA (08/11/2026): số "năm" của cloud Solarman không tin được (lớn hơn cả tổng) → năm = cộng sản lượng
+// từng tháng (lấy bằng lịch sử tháng, số này khớp app gốc). Tháng đã qua đệm 1 ngày, tháng này đệm 1 giờ.
+async function cacheJson(key, ttl, fn) {
+  const req = new Request(`https://cache.insolar-monitor/${key}`);
+  try { const hit = await caches.default.match(req); if (hit) return await hit.json(); } catch {}
+  const v = await fn();
+  if (v !== null && v !== undefined) try { await caches.default.put(req, new Response(JSON.stringify(v), { headers: { "Cache-Control": `max-age=${ttl}`, "Content-Type": "application/json" } })); } catch {}
+  return v;
+}
+async function cloudMonthKwh(env, st, ym, ctx) {
+  const r = await cloudHistory(env, st, "month", ym + "-01", ctx);
+  if (!r?.bars) return null; // lỗi → không đệm
+  const by = {};
+  for (const b of r.bars) if (isNum(b.pv)) by[b.day || b.label] = Math.max(by[b.day || b.label] ?? 0, b.pv);
+  return Math.round(Object.values(by).reduce((t, x) => t + x, 0) * 10) / 10;
+}
 async function cloudYear(env, st, ctx) {
   if (!st.account_id || st.gateway_id) return null;
-  const d = vnToday();
-  const key = new Request(`https://cache.insolar-monitor/energy-year2/${st.id}/${d}`);
-  try {
-    const hit = await caches.default.match(key);
-    if (hit) return await hit.json();
-  } catch {}
-  const r = await cloudHistory(env, st, "year", d, ctx);
-  if (!r?.bars?.length) return null;
-  // SỬA (08/11/2026): mỗi tháng chỉ tính 1 lần, bỏ tháng chưa tới; năm không được vượt tổng / nhỏ hơn tháng
-  const mm = d.slice(5, 7);
-  const by = {};
-  for (const b of r.bars) {
-    const k = String(b.label).padStart(2, "0");
-    if (!isNum(b.pv) || !/^\d\d$/.test(k) || k > mm) continue;
-    by[k] = Math.max(by[k] ?? 0, b.pv);
-  }
-  if (!Object.keys(by).length) return null;
-  const total = isNum(st.total_kwh) && st.total_kwh > 0 ? st.total_kwh : Infinity;
-  const month = Math.min(by[mm] ?? 0, total);
-  let year = Object.values(by).reduce((t, x) => t + x, 0);
-  if (year > total) year = total; // cloud trả sai (lẫn năm cũ) → năm ≤ tổng
-  if (year < month) year = month;
-  const out = { month: Math.round(month * 10) / 10, year: Math.round(year * 10) / 10 };
-  try { ctx?.waitUntil?.(caches.default.put(key, new Response(JSON.stringify(out), { headers: { "Cache-Control": "max-age=3600", "Content-Type": "application/json" } }))); } catch {}
-  return out;
+  const d = vnToday(), y = d.slice(0, 4), m = Number(d.slice(5, 7));
+  const month = await cacheJson(`em3/${st.id}/${d.slice(0, 7)}/${d}-${new Date().getUTCHours()}`, 3600, () => cloudMonthKwh(env, st, d.slice(0, 7), ctx));
+  if (!isNum(month)) return null;
+  const past = await cacheJson(`ep3/${st.id}/${d}`, 86400, async () => {
+    let t = 0;
+    for (let i = 1; i < m; i += 4) {
+      const xs = await Promise.all([i, i + 1, i + 2, i + 3].filter((k) => k < m).map((k) => cloudMonthKwh(env, st, `${y}-${String(k).padStart(2, "0")}`, ctx)));
+      if (xs.some((x) => x === null)) return null;
+      t += xs.reduce((a, x) => a + x, 0);
+    }
+    return Math.round(t * 10) / 10;
+  });
+  let year = isNum(past) ? past + month : null;
+  const total = isNum(st.total_kwh) && st.total_kwh > 0 ? st.total_kwh : null;
+  if (isNum(year) && total !== null && year > total) year = total;
+  return { month, year: isNum(year) ? Math.round(year * 10) / 10 : null };
 }
 
 // MỚI (07/11/2026): sản lượng tháng/năm (cộng max today_kwh từng ngày trong readings) để tính tiền khai thác
