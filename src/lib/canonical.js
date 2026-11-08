@@ -211,9 +211,10 @@ function finish(d) {
   if (sg < 0) { g.power = -g.power; for (const p of g.phases) if (n(p.w) !== null) p.w = -p.w; d.sign_fixed = [...(d.sign_fixed || []), "grid"]; }
   // 2) Dòng pin cùng dấu với công suất pin (nhiều hãng trả dòng luôn dương)
   if (n(b.power) !== null && n(b.current) !== null && Math.abs(b.power) > 30 && Math.sign(b.power) !== Math.sign(b.current) && b.current !== 0) b.current = -b.current;
-  if (n(b.power) !== null && n(b.current) === null && n(b.voltage)) b.current = Math.round((b.power / b.voltage) * 10) / 10;
-  // 3) Thiếu công suất tải → tính từ cân bằng
-  if (n(d.load.power) === null && n(d.pv.power) !== null && n(g.power) !== null) d.load.power = Math.max(0, Math.round(d.pv.power + (n(b.power) || 0) + g.power));
+  // SỬA (08/11/2026): số tự tính (không phải số hãng trả) phải đánh dấu *_calc để giao diện ghi "≈ (tính)"
+  if (n(b.power) !== null && n(b.current) === null && n(b.voltage)) { b.current = Math.round((b.power / b.voltage) * 10) / 10; b.current_calc = true; }
+  // 3) Thiếu công suất tải → tính từ cân bằng PV + pin + lưới (đánh dấu là số tính)
+  if (n(d.load.power) === null && n(d.pv.power) !== null && n(g.power) !== null) { d.load.power = Math.max(0, Math.round(d.pv.power + (n(b.power) || 0) + g.power)); d.load.calc = true; }
   // 4) Tải & 5) Lưới — SỬA (01/11/2026): chỉ suy công suất pha từ tổng khi hệ 1 pha (hệ 3 pha chia đều là SAI → để trống);
   //    dòng chỉ tính từ công suất pha THẬT; dòng hãng trả lệch hẳn so với P/U (vd. 1,44 kW mà 0,5 A) thì tính lại từ P/U.
   // SỬA (03/11/2026): đối chiếu dữ liệu thật — Deye Cloud ("Grid Current L1L2") và PV Pro (grid.vip.current) trả dòng ĐẦU RA BIẾN TẦN
@@ -223,20 +224,22 @@ function finish(d) {
   const fixPhases = (o, total, ref) => {
     const ps = live(o);
     if (!ps.length) return;
+    // SỬA (08/11/2026): không ghi đè số pha bằng số tổng / số tự tính nữa. Số pha của hãng lệch hẳn thực tế → để trống ("--").
     if (ps.length === 1 && n(total) !== null) {
       const p = ps[0];
-      if (n(p.w) === null || Math.abs(p.w - total) > Math.max(150, 0.25 * Math.abs(total))) p.w = Math.round(total);
+      if (n(p.w) !== null && Math.abs(p.w - total) > Math.max(150, 0.25 * Math.abs(total))) p.w = null;
     }
     for (const p of ps) {
-      if (!(n(p.v) > 50) || n(p.w) === null) continue;
-      const calc = Math.round((Math.abs(p.w) / p.v) * 10) / 10;
-      const va = n(p.a) === null ? null : Math.abs(p.a) * p.v, w = Math.abs(p.w);
+      // 1 pha mà hãng không trả công suất pha → chỉ dùng công suất tổng để KIỂM TRA dòng (không ghi vào ô công suất pha)
+      const pw = n(p.w) !== null ? p.w : ps.length === 1 && n(total) !== null ? total : null;
+      if (!(n(p.v) > 50) || pw === null) continue;
+      const va = n(p.a) === null ? null : Math.abs(p.a) * p.v, w = Math.abs(pw);
       const r = ref && ref.find((q) => q.l === p.l);
       const copy = r && n(r.a) !== null && n(p.a) !== null && Math.abs(p.a) > 1 && Math.abs(Math.abs(p.a) - Math.abs(r.a)) <= Math.max(0.3, 0.05 * Math.abs(r.a)) && Math.abs(Math.abs(r.a) * p.v - w) > 200;
-      if (va === null || (w > 100 && va < 0.85 * w) || va > 2 * w + 250 || copy) p.a = calc; // dòng×áp không thể nhỏ hơn công suất thực
+      if (va !== null && ((w > 100 && va < 0.85 * w) || va > 2 * w + 250 || copy)) p.a = null; // dòng hãng trả không khớp công suất (thường là dòng biến tần) → để trống
     }
   };
-  // Lưới: dòng từng pha tính từ công suất LƯỚI (không lấy dòng biến tần) — lưới mua 141 W phải ra ~0,6 A chứ không phải 16 A
+  // Lưới: dòng pha hãng trả mà không khớp công suất lưới (thường là dòng biến tần, vd lưới 141 W mà 16 A) → để trống, không tự tính
   for (const p of d.output.phases) {
     const x = g.phases.find((q) => q.l === p.l);
     if (x && !n(p.v)) p.v = x.v;

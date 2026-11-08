@@ -1166,7 +1166,7 @@ function scene1(d, status) {
       <circle cx="232" cy="143" r="3.2" fill="${led}"/></g>
     ${essArt(295, 220, 54, d.battery.soc, bat)}
     ${T(78, 114, fW(pv), { s: 15, w: 800 })}${T(78, 129, "Tấm pin PV", { s: 11, c: "var(--muted)" })}
-    ${T(342, 114, fW(load), { s: 15, w: 800 })}${T(342, 129, "Tải nhà", { s: 11, c: "var(--muted)" })}
+    ${T(342, 114, fW(load), { s: 15, w: 800 })}${T(342, 129, S.detail?.load?.calc ? "Tải nhà ≈" : "Tải nhà", { s: 11, c: "var(--muted)" })}
     ${T(78, 320, fWa(grid), { s: 15, w: 800 })}${T(78, 335, "Lưới · " + gridDir(grid), { s: 11, c: "var(--muted)" })}
     ${T(322, 334, fWa(bat), { s: 15, w: 800 })}${T(322, 349, "Pin · " + batDir(bat), { s: 11, c: "var(--muted)" })}
   </svg>`;
@@ -1275,7 +1275,7 @@ function scene2(d, status) {
     ${flowLine(line(A.grid_flow), "var(--grid)", grid, isNum(grid) && grid < 0 ? -1 : 1, 2.2)}
     ${label(px, py - 44, "var(--sun)", fW(pv), "Tấm pin PV" + (ratio !== null ? " · " + Math.round(ratio) + "%" : ""))}
     ${label(Math.min(W - 8, gx + 10), gy - 26, "var(--grid)", fWa(grid), gridDir(grid) || "Lưới", "end")}
-    ${label(Math.max(8, hx - 150), hy - 34, "var(--home)", fW(load), "Tải nhà", "start")}
+    ${label(Math.max(8, hx - 150), hy - 34, "var(--home)", fW(load), S.detail?.load?.calc ? "Tải nhà ≈" : "Tải nhà", "start")}
     ${card}${wxChip}
   </svg>`;
 }
@@ -1300,7 +1300,7 @@ function scene3(d, status) {
     ${flowLine("M210 232 L210 260", "var(--bat)", bat, isNum(bat) && bat > 0 ? -1 : 1)}
     ${tile(130, 14, 160, 78, "var(--sun)", "panel", fW(pv), "Tấm pin PV", pvSub || "Sản lượng " + nf(d.pv.today_kwh, 1) + " kWh")}
     ${tile(8, 136, 120, 92, "var(--grid)", "tower", fWa(grid), "Lưới", gridDir(grid) + (isNum(d.grid.freq) ? " · " + nf(d.grid.freq, 1) + "Hz" : ""))}
-    ${tile(292, 136, 120, 92, "var(--home)", "home", fW(load), "Tải", "Hôm nay " + nf(d.load.today_kwh, 1) + " kWh")}
+    ${tile(292, 136, 120, 92, "var(--home)", "home", fW(load), d.load.calc ? "Tải ≈" : "Tải", "Hôm nay " + nf(d.load.today_kwh, 1) + " kWh")}
     <g><rect x="162" y="132" width="96" height="100" rx="20" fill="var(--surface)" stroke="var(--line)" stroke-width="1.3"/>
       <rect x="186" y="146" width="48" height="58" rx="8" fill="url(#invg)" stroke="#cbd5e1"/><rect x="192" y="153" width="36" height="16" rx="3" fill="#0f172a"/>
       ${T(210, 165, isNum(temp) ? Math.round(temp) + "°C" : "--", { s: 10, w: 800, c: "#4ade80" })}
@@ -1386,10 +1386,10 @@ function overviewHtml(d, status) {
   return `<div class="ov">${scene(d, status)}
   <div class="quad">
     ${qcard("var(--sun)", "var(--sun-soft)", "panel", "Mái pin PV", d.pv.power, [...pvRows, ...(pvRatio(d.pv.power) !== null ? [["Tỉ lệ phát", Math.round(pvRatio(d.pv.power)) + "% của " + nf(S.st.capacity_kwp, 1) + " kWp"]] : []),
-      ...(wxInfo(S.weather) ? [["Thời tiết", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°C" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + " W/m²" : "")]] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
-    ${qcard("var(--home)", "var(--home-soft)", "home", "Tải nhà", d.load.power, [...phaseRows(d.load.phases.length ? d.load.phases : d.output.phases, "Áp / dòng"),
+      ...(wxInfo(S.weather) ? [[S.weather.approx ? "Thời tiết (TP Thanh Hoá – trạm chưa có toạ độ)" : "Thời tiết", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°C" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + " W/m²" : "")]] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
+    ${qcard("var(--home)", "var(--home-soft)", "home", d.load.calc ? "Tải nhà ≈ (tính)" : "Tải nhà", d.load.power, [...phaseRows(d.load.phases, "Áp / dòng") /* SỬA (08/11/2026): không lấy áp/dòng đầu ra biến tần thay cho tải nhà */,
       ["Dự phòng UPS/EPS", fW(d.load.ups_power)], ["Tiêu thụ ngày", fK(d.load.today_kwh), "ce"]])}
-    ${qcard("var(--bat)", "var(--bat-soft)", "battery", "Pin lưu trữ", d.battery.power, [["Áp / dòng", `${fV(d.battery.voltage)} / ${fA(d.battery.current)}`, "cv"],
+    ${qcard("var(--bat)", "var(--bat-soft)", "battery", "Pin lưu trữ", d.battery.power, [["Áp / dòng", `${fV(d.battery.voltage)} / ${d.battery.current_calc ? "≈" : ""}${fA(d.battery.current)}`, "cv"],
       ["SOC / SOH", `${isNum(d.battery.soc) ? Math.round(d.battery.soc) + "%" : "--"} · ${isNum(d.battery.soh) ? Math.round(d.battery.soh) + "%" : "--"}`],
       ["Sạc ngày", fK(d.battery.today_charge), "cg"], ["Xả ngày", fK(d.battery.today_discharge), "ce"]])}
     ${qcard("var(--grid)", "var(--grid-soft)", "tower", "Điện lưới", gp, [...phaseRows(d.grid.phases, "Áp / dòng"), ["Tần số", isNum(d.grid.freq) ? nf(d.grid.freq, 2) + " Hz" : "--"],

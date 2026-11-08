@@ -92,9 +92,6 @@ function toList(creds, inv, bat, ex = {}) {
   if (eps.length) add("UPS Load Power", eps.reduce((a, b) => a + b, 0), "W");
   add("Rated Power", ex.ratedW, "W");
   if (RUN[inv.deviceStatus] || inv.deviceStatus != null) add("Inverter Status", RUN[inv.deviceStatus] || String(inv.deviceStatus), "");
-  add("Total Consumption Power", ex.loadW, "W");
-  add("Daily Consumption", ex.dailyLoad, "kWh");
-  add("Cumulative Consumption", ex.totalLoad, "kWh");
   add("Daily Charging Energy", ex.dailyCharged, "kWh");
   add("Daily Discharging Energy", ex.dailyDischarged, "kWh");
   if (bat) {
@@ -106,7 +103,6 @@ function toList(creds, inv, bat, ex = {}) {
     const bc = num(bat.batteryCurrent); // SolaX: dương = sạc → app: dương = xả
     add("Battery Current", bc === null ? null : -bc, "A");
     add("Battery Remaining Energy", num(bat.batteryRemainings), "kWh");
-    add("Battery Rated Capacity", ex.batAh, "Ah");
     add("Battery Temperature", num(bat.batteryTemperature), "℃");
     add("Total Charge Energy", num(bat.totalDevicCharge) ?? ex.totalCharged, "kWh");
     add("Total Discharge Energy", num(bat.totalDeviceDischarge) ?? ex.totalDischarged, "kWh");
@@ -153,7 +149,7 @@ export default {
       const pvW = toW(creds, inv.MPPTTotalInputPower) ?? (inv.pvMap ? [1, 2, 3, 4, 5, 6].map((i) => toW(creds, inv.pvMap[`pv${i}Power`])).filter((v) => v !== null).reduce((a, b) => a + b, 0) : null);
       const gridExp = toW(creds, inv.gridPower); // + = bán
       const batCharge = bat ? num(bat.chargeDischargePower) : 0; // + = sạc
-      const load = pvW !== null ? Math.max(0, pvW - (batCharge || 0) - (gridExp || 0)) : null;
+      // SỬA (08/11/2026): SolaX không trả công suất tải → không tự tính ở danh sách trạm (để trống)
       let status = online === false ? "offline" : statusFromTime(t);
       if (BAD.has(Number(inv.deviceStatus))) status = "alarm";
       out.push(station({
@@ -163,7 +159,7 @@ export default {
         capacity_kwp: p.pvCapacity,
         status,
         pv_power_w: pvW,
-        load_power_w: load,
+        load_power_w: null,
         grid_power_w: gridExp === null ? null : -gridExp,
         battery_power_w: bat && batCharge !== null ? -batCharge : undefined,
         battery_soc: bat?.batterySOC,
@@ -199,7 +195,7 @@ export default {
       if (pv === null) { const ps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => toW(creds, pvm[`pv${i}Power`] ?? mp[`mppt${i}Power`])).filter((v) => v !== null); pv = ps.length ? ps.reduce((a, c) => a + c, 0) : null; }
       const gexp = toW(creds, x.gridPower);
       const cp = b ? num(b.chargeDischargePower) : null;
-      const load = pv === null ? null : Math.max(0, pv - (cp || 0) - (gexp || 0));
+      const load = null; // SỬA (08/11/2026): SolaX không trả công suất tải trong lịch sử → để trống, không tự tính
       return { ts, pv, load, grid: gexp === null ? null : -gexp, bat: cp === null ? null : -cp, soc: b ? num(b.batterySOC) : null, today_kwh: num(x.dailyYield) };
     }).filter((p) => p.ts).sort((a, b) => (a.ts < b.ts ? -1 : 1));
     return { points, token: fresh };
@@ -216,20 +212,11 @@ export default {
     try { bat = (await get(creds, token, "/openapi/v2/device/realtime_data", { snList: sn, deviceType: "2", requestSnType: "1" }))?.[0] || null; } catch {}
     try { rt = await get(creds, token, "/openapi/v2/plant/realtime_data", { plantId }); } catch {}
     try { batInfo = (await allPages(creds, token, "/openapi/v2/device/page_device_info", { plantId, deviceType: "2" }))[0] || null; } catch {}
-    // Công suất tải = PV − (sạc +) − (bán +) ; điện tiêu thụ trong ngày = sản xuất + mua + xả − sạc − bán
-    const pvW = toW(creds, inv.MPPTTotalInputPower) ?? (inv.pvMap ? [1, 2, 3, 4, 5, 6].map((i) => toW(creds, inv.pvMap[`pv${i}Power`])).filter((v) => v !== null).reduce((a, b) => a + b, 0) : null);
-    const loadW = pvW === null ? null : Math.max(0, pvW - (num(bat?.chargeDischargePower) || 0) - (toW(creds, inv.gridPower) || 0));
+    // SỬA (08/11/2026): bỏ tự tính công suất tải / điện tiêu thụ ngày-tổng / dung lượng pin Ah (trước giả định 51,2V) —
+    // SolaX không trả các số này; công suất tải sẽ do finish() tính từ cân bằng và ghi rõ "≈ (tính)".
     const f = (k) => num(rt[k]);
-    const sum = (a, b, c, d, e) => [a, b, c, d, e].some((v) => v === null) ? null : Math.round((a + b + c - d - e) * 10) / 10;
-    const dailyLoad = sum(f("dailyYield"), f("dailyImported"), f("dailyDischarged"), f("dailyCharged"), f("dailyExported"));
-    const totalLoad = sum(f("totalYield"), f("totalImported"), f("totalDischarged"), f("totalCharged"), num(inv.totalExportEnergy));
-    // Dung lượng pin (Ah) quy đổi từ Wh danh định / điện áp (≈51,2V cho pin LFP 48V)
-    const wh = num(batInfo?.ratedCapacity);
-    const v = num(bat?.batteryVoltage);
-    const batAh = wh ? Math.round(wh / (v && v >= 40 && v <= 60 ? 51.2 : v || 51.2)) : null;
     const ex = {
       ratedW: dev?.ratedPower != null && num(dev.ratedPower) !== null ? Math.round(num(dev.ratedPower) * 1000) : null,
-      loadW, dailyLoad, totalLoad, batAh,
       dailyCharged: f("dailyCharged"), dailyDischarged: f("dailyDischarged"), totalCharged: f("totalCharged"), totalDischarged: f("totalDischarged"),
     };
     // Cảnh báo / lỗi đang diễn ra của thiết bị

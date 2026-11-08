@@ -250,8 +250,6 @@ function make(biz) {
           battery_soc: f.batterySoc ?? it.batterySoc,
           today_kwh: f.generationValue ?? it.generationValue,
           total_kwh: f.generationTotal ?? it.generationTotal,
-          // MỚI (08/11/2026): chỉ dùng khi Solarman trả sẵn sản lượng tháng/năm (không tự tính)
-          month_kwh: f.generationMonth ?? it.generationMonth, year_kwh: f.generationYear ?? it.generationYear,
           data_time: t,
         }));
       }

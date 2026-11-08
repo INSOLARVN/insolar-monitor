@@ -86,7 +86,6 @@ export default {
         battery_soc: f.batterySoc,
         today_kwh: num(sm.dailyPowerGeneration),
         total_kwh: num(sm.lifetimePowerGeneration),
-        month_kwh: num(sm.monthlyPowerGeneration ?? sm.monthPowerGeneration), year_kwh: num(sm.annualPowerGeneration ?? sm.yearlyPowerGeneration ?? sm.yearPowerGeneration), // MỚI (08/11/2026)
         data_time: at ? new Date(at).toISOString() : null,
       }));
     }

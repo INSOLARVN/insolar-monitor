@@ -50,6 +50,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 9. **Gán thông số (07/11/2026):** mỗi hãng/dòng/đời máy đặt tên khác nhau → (a) `fillBattery` trong `canonical.js` tự dò tên pin linh hoạt; (b) người dùng bấm vào thông số (tab Biến tần hoặc "Tất cả thông số pin từ hãng") → chọn ô hiển thị + phạm vi (trạm / dòng máy `device.model_key` / cả hãng) + hệ số nhân. Lưu bảng `field_maps` (tự tạo trong `ensureAlarms`), áp dụng trong `fromCloudList(…, maps)` qua `applyMaps` (ghi đè tự dò; trạm > dòng máy > hãng). API `/api/field-maps` (GET/POST/DELETE). Chỉ cho trạm cloud (gateway dùng profile thanh ghi).
 
+10. **Rà soát "không đoán" (08/11/2026):** đã bỏ: SolaX tự tính công suất tải/điện tiêu thụ/dung lượng pin Ah (giả định 51,2V); `finish()` ghi đè công suất pha bằng tổng và tính lại dòng pha từ P/U (nay số pha lệch thì để trống); thẻ Tải nhà lấy áp/dòng đầu ra biến tần khi thiếu số tải; tên trường tháng/năm đoán của Sigenergy/Solarman. Còn giữ nhưng **ghi rõ**: công suất tải tính từ cân bằng khi hãng không trả (`load.calc` → "≈ (tính)"), dòng pin = P/U (`battery.current_calc` → "≈"), thời tiết dùng TP Thanh Hoá khi trạm chưa có toạ độ (ghi rõ). Còn giữ (dựa trên quy luật vật lý, đã đối chiếu trạm thật 01–03/11): tự đảo dấu pin/lưới theo cân bằng PV+pin+lưới≈tải; PV chuỗi = V×A khi thiếu W; ẩn chuỗi PV chưa từng phát (`pv_seen`). **Chưa kiểm chứng với dữ liệu thật:** sản lượng tháng Solarman (lịch sử tháng), dò tên pin `fillBattery`.
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.
