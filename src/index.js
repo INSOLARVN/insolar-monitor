@@ -304,22 +304,28 @@ async function cloudHistory(env, st, range, d, ctx) {
 async function cloudYear(env, st, ctx) {
   if (!st.account_id || st.gateway_id) return null;
   const d = vnToday();
-  const key = new Request(`https://cache.insolar-monitor/energy-year/${st.id}/${d}`);
+  const key = new Request(`https://cache.insolar-monitor/energy-year2/${st.id}/${d}`);
   try {
     const hit = await caches.default.match(key);
     if (hit) return await hit.json();
   } catch {}
   const r = await cloudHistory(env, st, "year", d, ctx);
   if (!r?.bars?.length) return null;
+  // SỬA (08/11/2026): mỗi tháng chỉ tính 1 lần, bỏ tháng chưa tới; năm không được vượt tổng / nhỏ hơn tháng
   const mm = d.slice(5, 7);
-  let year = 0, month = null, any = false;
+  const by = {};
   for (const b of r.bars) {
-    if (!isNum(b.pv)) continue;
-    any = true; year += b.pv;
-    if (String(b.label).padStart(2, "0") === mm) month = b.pv;
+    const k = String(b.label).padStart(2, "0");
+    if (!isNum(b.pv) || !/^\d\d$/.test(k) || k > mm) continue;
+    by[k] = Math.max(by[k] ?? 0, b.pv);
   }
-  if (!any) return null;
-  const out = { month: month ?? 0, year: Math.round(year * 10) / 10 };
+  if (!Object.keys(by).length) return null;
+  const total = isNum(st.total_kwh) && st.total_kwh > 0 ? st.total_kwh : Infinity;
+  const month = Math.min(by[mm] ?? 0, total);
+  let year = Object.values(by).reduce((t, x) => t + x, 0);
+  if (year > total) year = total; // cloud trả sai (lẫn năm cũ) → năm ≤ tổng
+  if (year < month) year = month;
+  const out = { month: Math.round(month * 10) / 10, year: Math.round(year * 10) / 10 };
   try { ctx?.waitUntil?.(caches.default.put(key, new Response(JSON.stringify(out), { headers: { "Cache-Control": "max-age=3600", "Content-Type": "application/json" } }))); } catch {}
   return out;
 }

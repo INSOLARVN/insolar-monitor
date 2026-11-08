@@ -289,7 +289,14 @@ function make(biz) {
       }
       if (range === "year") {
         const r = await first(s, [`/maintain-s/history/batteryPower/${stationId}/stats/year?year=${y}`, `/maintain-s/history/power/${stationId}/stats/year?year=${y}`]);
-        return { bars: (r.records || []).map((it, i) => bar(it, String(it.month || i + 1).padStart(2, "0"))) };
+        // SỬA (08/11/2026): bản ghi có thể lẫn năm khác / trùng tháng → chỉ giữ đúng năm, mỗi tháng 1 bản ghi
+        const by = {};
+        (r.records || []).forEach((it, i) => {
+          if (it.year && Number(it.year) !== y) return;
+          const k = String(it.month || i + 1).padStart(2, "0");
+          if (!by[k] || (num(it.generationValue) || 0) > (num(by[k].generationValue) || 0)) by[k] = it;
+        });
+        return { bars: Object.keys(by).sort().map((k) => bar(by[k], k)) };
       }
       const r = await first(s, [`/maintain-s/history/batteryPower/${stationId}/stats/daily?year=${y}&month=${m}&day=${d}`, `/maintain-s/history/power/${stationId}/record?year=${y}&month=${m}&day=${d}`]);
       const points = (r.records || []).map((it) => ({
