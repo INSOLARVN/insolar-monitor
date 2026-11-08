@@ -1412,7 +1412,7 @@ function overviewHtml(d, status) {
   return `<div class="ov">${scene(d, status)}
   <div class="quad">
     ${qcard("var(--sun)", "var(--sun-soft)", "panel", "Mái pin PV", d.pv.power, [...pvRows, ...(pvRatio(d.pv.power) !== null ? [["Tỉ lệ phát", Math.round(pvRatio(d.pv.power)) + "% của " + nf(S.st.capacity_kwp, 1) + " kWp"]] : []),
-      ...(wxInfo(S.weather) ? [[S.weather.approx ? "Thời tiết (TP Thanh Hoá – trạm chưa có toạ độ)" : "Thời tiết", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°C" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + " W/m²" : "")]] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
+      ...(wxInfo(S.weather) ? [[S.weather.approx ? "Thời tiết ≈TH" : "Thời tiết", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + "W/m²" : "")] /* SỬA (08/11/2026): nhãn ngắn — "≈TH" = lấy theo TP Thanh Hoá vì trạm chưa có toạ độ */] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
     ${qcard("var(--home)", "var(--home-soft)", "home", d.load.calc ? "Tải nhà ≈ (tính)" : "Tải nhà", d.load.power, [...phaseRows(d.load.phases, "Áp / dòng") /* SỬA (08/11/2026): không lấy áp/dòng đầu ra biến tần thay cho tải nhà */,
       ["Dự phòng UPS/EPS", fW(d.load.ups_power)], ["Tiêu thụ ngày", fK(d.load.today_kwh), "ce"]])}
     ${qcard("var(--bat)", "var(--bat-soft)", "battery", "Pin lưu trữ", d.battery.power, [["Áp / dòng", `${fV(d.battery.voltage)} / ${d.battery.current_calc ? "≈" : ""}${fA(d.battery.current)}`, "cv"],
