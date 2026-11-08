@@ -58,6 +58,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 13. **Dữ liệu thật Solarman Smart – SRNE 12 kW 3 pha (Tranh An, 08/11/2026):** cùng bộ tên kiểu Deye (logger Solarman): `Grid Voltage/Current/Power L1–L3` có thật, `AC Voltage/Current R/U/A…` = đầu ra biến tần, `Load phase power A/B/C` = tải nhà, `Load Voltage  L1` (2 dấu cách → gộp khoảng trắng), `Daily Energy Buy`/`Daily energy sell`, `Total Energy Buy/Sell`, `Total Consumption`, `Load Fequency` (sai chính tả của hãng), `Battery current 1`, `BMS Temperature`. **Không có:** dòng tải từng pha, SOH pin. Tệp mẫu để thử: chạy `fromCloudList` với danh sách tên/giá trị.
 
+14. **Dữ liệu thật SolaX X1-Lite-LV (Chú Thượng, 08/11/2026):** `inv.mpptMap.MPPT1Voltage/Current/Power` (chữ hoa); `inv.dailyYield/totalYield` = sản lượng PV (4,5 / 6.583,5); `plant.dailyYield/totalYield` và `inv.dailyACOutput/totalACOutput` = điện AC biến tần xuất (8,7) — không phải PV; `inv.acVoltage1/acCurrent1/acPower1` = đầu ra AC biến tần (988 W ≈ tải khi lưới 0); `EPSL1Voltage` trống; **không có** áp/dòng tải riêng, điện tiêu thụ ngày. Adapter SolaX đưa nguyên trường gốc vào nhóm "Gốc SolaX – …" (người dùng có thể tự gán vào ô qua Gán thông số).
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.

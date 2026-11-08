@@ -58,7 +58,9 @@ function toList(creds, inv, bat, ex = {}) {
   const pv = inv.pvMap || {};
   const mp = inv.mpptMap || {};
   for (let i = 1; i <= 12; i++) {
-    const v = num(pv[`pv${i}Voltage`] ?? mp[`mppt${i}Voltage`]), a = num(pv[`pv${i}Current`] ?? mp[`mppt${i}Current`]), p = toW(creds, pv[`pv${i}Power`] ?? mp[`mppt${i}Power`]);
+    // SỬA (08/11/2026): dữ liệu thật SolaX X1-Lite-LV: khoá là "MPPT1Voltage/MPPT1Current/MPPT1Power" (chữ hoa) — trước tìm "mppt1…" nên không thấy PV từng chuỗi
+    const m = (k) => mp[`MPPT${i}${k}`] ?? mp[`mppt${i}${k}`];
+    const v = num(pv[`pv${i}Voltage`] ?? m("Voltage")), a = num(pv[`pv${i}Current`] ?? m("Current")), p = toW(creds, pv[`pv${i}Power`] ?? m("Power"));
     if (v === null && a === null && p === null) continue;
     if (!(v || a || p) && i > 4) continue; // bỏ các MPPT không dùng
     add(`Voltage PV${i}`, v, "V"); add(`Current PV${i}`, a, "A"); add(`Power PV${i}`, p, "W");
@@ -104,7 +106,7 @@ function toList(creds, inv, bat, ex = {}) {
     add("Battery Current", bc === null ? null : -bc, "A");
     add("Battery Remaining Energy", num(bat.batteryRemainings), "kWh");
     add("Battery Temperature", num(bat.batteryTemperature), "℃");
-    add("Total Charge Energy", num(bat.totalDevicCharge) ?? ex.totalCharged, "kWh");
+    add("Total Charge Energy", num(bat.totalDeviceCharge) ?? ex.totalCharged /* SỬA (08/11/2026): sai chính tả tên trường */, "kWh");
     add("Total Discharge Energy", num(bat.totalDeviceDischarge) ?? ex.totalDischarged, "kWh");
     add("Total Battery Life Cycles", num(bat.batteryCycleTimes), "");
   }
@@ -163,8 +165,10 @@ export default {
         grid_power_w: gridExp === null ? null : -gridExp,
         battery_power_w: bat && batCharge !== null ? -batCharge : undefined,
         battery_soc: bat?.batterySOC,
-        today_kwh: rt.dailyYield,
-        total_kwh: rt.totalYield,
+        // SỬA (08/11/2026): dữ liệu thật — plant.dailyYield (8,7) = inv.dailyACOutput (điện AC biến tần xuất), KHÔNG phải sản lượng PV;
+        // sản lượng PV là inv.dailyYield (4,5) / inv.totalYield
+        today_kwh: inv.dailyYield,
+        total_kwh: inv.totalYield,
         data_time: t,
       }));
     }
@@ -192,7 +196,7 @@ export default {
       const b = bm.get(key(x));
       const pvm = x.pvMap || {}, mp = x.mpptMap || {};
       let pv = toW(creds, x.MPPTTotalInputPower);
-      if (pv === null) { const ps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => toW(creds, pvm[`pv${i}Power`] ?? mp[`mppt${i}Power`])).filter((v) => v !== null); pv = ps.length ? ps.reduce((a, c) => a + c, 0) : null; }
+      if (pv === null) { const ps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => toW(creds, pvm[`pv${i}Power`] ?? mp[`MPPT${i}Power`] ?? mp[`mppt${i}Power`])).filter((v) => v !== null); pv = ps.length ? ps.reduce((a, c) => a + c, 0) : null; }
       const gexp = toW(creds, x.gridPower);
       const cp = b ? num(b.chargeDischargePower) : null;
       const load = null; // SỬA (08/11/2026): SolaX không trả công suất tải trong lịch sử → để trống, không tự tính
