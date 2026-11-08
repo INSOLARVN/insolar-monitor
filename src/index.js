@@ -35,6 +35,7 @@ async function syncAccount(env, acc, opt = {}) {
     const stmts = [];
     await ensureLatLon(env);
     for (const s of stations) {
+      if (isNum(s.month_kwh) || isNum(s.year_kwh)) stmts.push(env.DB.prepare("UPDATE stations SET month_kwh=?3, year_kwh=?4, my_day=?5 WHERE account_id=?1 AND ext_id=?2").bind(acc.id, s.ext_id, s.month_kwh ?? null, s.year_kwh ?? null, vnToday()));
       if (isNum(s.lat) && isNum(s.lon) && (s.lat || s.lon)) stmts.push(env.DB.prepare("UPDATE stations SET lat=COALESCE(lat, ?3), lon=COALESCE(lon, ?4) WHERE account_id=?1 AND ext_id=?2").bind(acc.id, s.ext_id, s.lat, s.lon));
       stmts.push(env.DB.prepare(
         `INSERT INTO stations (account_id, brand, ext_id, name, address, capacity_kwp, status, pv_power_w, load_power_w, grid_power_w, battery_soc, today_kwh, total_kwh, data_time, synced_at, battery_power_w)
@@ -192,6 +193,8 @@ async function ensureLatLon(env) {
   for (const c of ["lat", "lon"]) await env.DB.prepare(`ALTER TABLE stations ADD COLUMN ${c} REAL`).run().catch(() => {});
   // MỚI (07/11/2026): danh sách chuỗi PV đã từng phát điện (vd "1,2") → chỉ hiện PV thật đang đấu
   await env.DB.prepare("ALTER TABLE stations ADD COLUMN pv_seen TEXT").run().catch(() => {});
+  // MỚI (08/11/2026): sản lượng tháng/năm hãng trả sẵn trong danh sách trạm + ngày lấy
+  for (const c of ["month_kwh REAL", "year_kwh REAL", "my_day TEXT"]) await env.DB.prepare(`ALTER TABLE stations ADD COLUMN ${c}`).run().catch(() => {});
   latLonReady = true;
 }
 async function weatherFor(env, st) {
@@ -341,7 +344,13 @@ async function cloudYear(env, st, ctx) {
 // SỬA (08/11/2026): trước chỉ cộng readings (chỉ có từ ngày thêm trạm vào app) → tháng = năm, thiếu số.
 // Nay ưu tiên lấy sản lượng từng tháng của năm từ cloud hãng (đệm 1 giờ), lỗi mới dùng readings.
 async function energySum(env, st, ctx) {
-  const cloud = await cloudYear(env, st, ctx);
+  const cloud = await cloudYear(env, st, ctx).catch(() => null);
+  // Hãng có sẵn tháng/năm trong danh sách trạm (Solis, Sigenergy) → dùng luôn nếu là số của tháng này
+  if (!cloud?.year) {
+    const r = await env.DB.prepare("SELECT month_kwh, year_kwh, my_day FROM stations WHERE id=?1").bind(st.id).first().catch(() => null);
+    if (r?.my_day && r.my_day.slice(0, 7) === vnToday().slice(0, 7) && (isNum(r.month_kwh) || isNum(r.year_kwh)))
+      return { today: st.today_kwh ?? null, month: r.month_kwh ?? cloud?.month ?? null, year: r.year_kwh ?? null, total: st.total_kwh ?? null, src: "brand" };
+  }
   if (cloud) return { today: st.today_kwh ?? null, ...cloud, total: st.total_kwh ?? null, src: "cloud" };
   try {
     const d = vnToday();

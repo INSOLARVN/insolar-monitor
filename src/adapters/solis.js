@@ -114,6 +114,7 @@ export default {
           battery_soc: r.batteryPercent ?? r.batteryCapacitySoc,
           today_kwh: toKWh(r.dayEnergy, r.dayEnergyStr),
           total_kwh: toKWh(r.allEnergy, r.allEnergyStr),
+          month_kwh: toKWh(r.monthEnergy, r.monthEnergyStr), year_kwh: toKWh(r.yearEnergy, r.yearEnergyStr), // MỚI (08/11/2026)
           data_time: isoFromAny(r.dataTimestamp),
         }));
       }

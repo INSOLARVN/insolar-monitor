@@ -77,6 +77,7 @@ export function station(o) {
     battery_power_w: num(o.battery_power_w), // MỚI (31/10/2026): công suất pin (+ = xả, − = sạc) để lịch sử có đường Pin
     today_kwh: num(o.today_kwh),
     total_kwh: num(o.total_kwh),
+    month_kwh: num(o.month_kwh), year_kwh: num(o.year_kwh), // MỚI (08/11/2026): sản lượng tháng/năm hãng tự tính (Solis, Sigenergy)
     data_time: o.data_time || null,
   };
 }
