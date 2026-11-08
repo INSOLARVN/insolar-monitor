@@ -54,6 +54,15 @@ async function syncAccount(env, acc, opt = {}) {
          SELECT id, ?3, ?4, ?5, ?6, ?7, ?8, ?9 FROM stations WHERE account_id=?1 AND ext_id=?2`
       ).bind(acc.id, s.ext_id, ts, s.pv_power_w, s.load_power_w, s.grid_power_w, s.battery_power_w ?? null, s.battery_soc, s.today_kwh));
     }
+    // MỚI (08/11/2026): trạm đã xoá bên hãng (không còn trong danh sách hãng trả) → xoá khỏi app cùng dữ liệu kèm theo.
+    // Chỉ làm khi lấy danh sách thành công và có ≥ 1 trạm (lỗi giữa chừng thì adapter ném lỗi → không vào đây).
+    if (stations.length) {
+      const keep = JSON.stringify(stations.map((x) => String(x.ext_id)));
+      const gone = `SELECT id FROM stations WHERE account_id=?1 AND CAST(ext_id AS TEXT) NOT IN (SELECT CAST(value AS TEXT) FROM json_each(?2))`;
+      await ensureAlarms(env);
+      for (const t of ["readings", "details", "alarms"]) stmts.push(env.DB.prepare(`DELETE FROM ${t} WHERE station_id IN (${gone})`).bind(acc.id, keep));
+      stmts.push(env.DB.prepare(`DELETE FROM stations WHERE id IN (${gone})`).bind(acc.id, keep));
+    }
     stmts.push(env.DB.prepare("UPDATE accounts SET last_sync=?2, last_error=NULL, token_enc=COALESCE(?3, token_enc) WHERE id=?1")
       .bind(acc.id, now, token ? await encrypt(env.ENC_KEY, token) : null));
     for (let i = 0; i < stmts.length; i += 90) await env.DB.batch(stmts.slice(i, i + 90));

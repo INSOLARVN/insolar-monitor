@@ -69,6 +69,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 18. **Đánh dấu "chưa gán" (08/11/2026):** `fromCloudList` đặt `params[].used` (khớp `CLOUD_MAP`, `fillBattery` hoặc gán của người dùng). Tab Biến tần gắn nhãn "chưa gán" cho thông số số, khác 0, `used === false` (bỏ nhóm "Gốc …") + dòng tổng số ở đầu → gặp đời máy/tên mới thì người dùng chép thông số gốc gửi kỹ thuật thêm vào quy tắc chung (không gán tay). Quy tắc gán là CHUNG theo tên thông số của hãng (mọi trạm/dòng máy trả cùng tên đều áp dụng), trạm thật chỉ dùng để kiểm nghĩa của tên.
 
+19. **Trạm đã xoá bên hãng (08/11/2026):** `syncAccount` xoá trạm (kèm readings/details/alarms) của tài khoản cloud khi hãng không còn trả về trong danh sách; chỉ khi lấy danh sách thành công và có ≥ 1 trạm. Trạm gateway (account_id 0) không bị ảnh hưởng.
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.
