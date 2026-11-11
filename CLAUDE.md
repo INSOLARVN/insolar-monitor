@@ -23,7 +23,7 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 ## Cấu trúc
 | Đường dẫn | Nội dung |
 |---|---|
-| `src/index.js` | Router API, đồng bộ cloud (cron 5 phút), chi tiết trạm, lịch sử, cài đặt từ xa qua cloud (`cloudSetting`), thời tiết (`weatherFor`, Open-Meteo, đệm 15 phút), `/flash` nạp firmware |
+| `src/index.js` | Router API, đồng bộ cloud (SỬA 11/11/2026: BỎ cron 5 phút — chỉ đồng bộ khi bấm nút Đồng bộ/Cập nhật, để tiết kiệm ghi D1), chi tiết trạm, lịch sử, cài đặt từ xa qua cloud (`cloudSetting`), thời tiết (`weatherFor`, Open-Meteo, đệm 15 phút), `/flash` nạp firmware |
 | `src/auth.js` | Tài khoản người dùng (xem mục Đăng nhập) |
 | `src/gateway-hub.js` | Durable Object `GatewayHub`: 1 WebSocket/gateway ESP32, giải mã Modbus/CAN/BMS, ghi lệnh (chờ ack 20s), ghi D1 mỗi 5 phút |
 | `src/adapters/` | `solis.js` (HMAC-SHA1 + điều khiển `/v2/api/atReadBatch`, `/v2/api/control`), `deyecloud.js` (OpenAPI v1.0 + lệnh `/order/...`, chờ `GET /order/{id}` status 666), `solarman.js` (OpenAPI trả phí), `solarmanapp.js` (MỚI 07/11/2026: đăng nhập email+mật khẩu như app Solarman Smart, API không công khai `/oauth-s/oauth/token`, `/maintain-s/...`, `/device-s/device/v3/detail`; bị captcha thì dán Token JWT từ trình duyệt; cùng tệp có `solarman_biz` = **Solarman Business** globalpro.solarmanpv.com: đăng nhập web bắt captcha → người dùng dán cookie (`copy(document.cookie)`), lấy refresh token (JWT có `ati`, ~6 tháng) → `/oauth2-s/oauth/token` grant refresh_token; refresh mới lưu trong token_enc, `keepToken` để lỗi không xoá; trạm `/maintain-s/operating/station/v2/search`), `solax.js`, `foxess.js` (API Key, chữ ký md5), `inteless.js` (app PV Pro / logger E-Linter — Chisage, Sosen, Sunsynk; cài đặt từ xa qua `api/v1/common/setting/{sn}/read|set` (chế độ, ưu tiên, bán dư, dòng sạc/xả, SOC, lịch 6 mốc); đăng nhập RSA PKCS#1 tự viết bằng BigInt, tự dò máy chủ pv/api/euapi/usapi.inteless.com, api.sunsynk.net), `sigen.js` (Sigenergy OpenAPI, giới hạn 1 lần/5 phút/endpoint → đệm trong token_enc), `demo.js`, `util.js` (`station()` có `lat/lon`) |
@@ -70,6 +70,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 18. **Đánh dấu "chưa gán" (08/11/2026):** `fromCloudList` đặt `params[].used` (khớp `CLOUD_MAP`, `fillBattery` hoặc gán của người dùng). Tab Biến tần gắn nhãn "chưa gán" cho thông số số, khác 0, `used === false` (bỏ nhóm "Gốc …") + dòng tổng số ở đầu → gặp đời máy/tên mới thì người dùng chép thông số gốc gửi kỹ thuật thêm vào quy tắc chung (không gán tay). Quy tắc gán là CHUNG theo tên thông số của hãng (mọi trạm/dòng máy trả cùng tên đều áp dụng), trạm thật chỉ dùng để kiểm nghĩa của tên.
 
 19. **Trạm đã xoá bên hãng (08/11/2026):** `syncAccount` xoá trạm (kèm readings/details/alarms) của tài khoản cloud khi hãng không còn trả về trong danh sách; chỉ khi lấy danh sách thành công và có ≥ 1 trạm. Trạm gateway (account_id 0) không bị ảnh hưởng.
+
+20. **Chỉ cập nhật khi bấm (11/11/2026, người dùng yêu cầu):** cron 5 phút ghi D1 ~90.000 dòng/ngày (readings + stations + details + alarms), gần chạm 100K/ngày → `crons = []`; giao diện bỏ mọi `setInterval` tự tải lại (danh sách 30s, cảnh báo 60s, trạm 5–30s). Danh sách/Cảnh báo: nút Đồng bộ (`/api/sync-all`). Trang trạm: nút Cập nhật `#bUpd` (`manualUpdate`). Lịch sử `readings` chỉ có điểm tại các lần bấm đồng bộ.
 
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).

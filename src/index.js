@@ -752,6 +752,7 @@ export default {
       return json({ error: String(e.message || e) }, 500);
     }
   },
+  // SỬA (11/11/2026): không còn lịch cron (wrangler.toml crons = []) — chỉ đồng bộ khi người dùng bấm Cập nhật.
   async scheduled(_ev, env, ctx) {
     ctx.waitUntil(syncAll(env));
   },

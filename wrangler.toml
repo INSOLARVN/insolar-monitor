@@ -2,9 +2,10 @@ name = "insolar-monitor"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
-# Đồng bộ dữ liệu từ cloud các hãng mỗi 5 phút
+# SỬA (11/11/2026 — người dùng): BỎ tự đồng bộ 5 phút (ghi D1 ~90.000 dòng/ngày, gần chạm giới hạn 100K/ngày).
+# Chỉ tải dữ liệu khi bấm nút Cập nhật / Đồng bộ trên giao diện. crons rỗng = gỡ lịch khỏi Cloudflare khi deploy.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = []
 
 [[d1_databases]]
 binding = "DB"

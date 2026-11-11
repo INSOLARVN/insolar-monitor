@@ -664,7 +664,7 @@ function viewCls(group, idx) {
 function header(title, sub, left = "", right = "") {
   return `<div class="top"><div class="wrap"><div>${left}</div><div style="min-width:0"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div><div>${right}</div></div></div>`;
 }
-function stopTimer() { clearInterval(S.timer); S.timer = null; S.charts.forEach((c) => c.destroy()); S.charts = []; }
+function stopTimer() { clearInterval(S.timer); S.timer = null; S.redraw = null; S.charts.forEach((c) => c.destroy()); S.charts = []; }
 
 async function render() {
   stopTimer();
@@ -928,7 +928,7 @@ async function renderList() {
   $("#bLogout").onclick = async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); go("#/login"); };
   $("#bSync").onclick = async () => { toast("Đang đồng bộ tất cả…"); await api("/api/sync-all", { method: "POST" }); setTimeout(loadList, 6000); };
   await loadList();
-  S.timer = setInterval(() => !document.hidden && loadList(), 30000);
+  // SỬA (11/11/2026): bỏ tự tải lại 30 giây — chỉ cập nhật khi bấm nút Đồng bộ (tiết kiệm đọc/ghi D1)
 }
 async function loadList() {
   try { S.stations = await api("/api/stations"); } catch { return; }
@@ -1003,7 +1003,7 @@ async function renderAlarms() {
     <div class="wrap" style="padding-top:12px"><div id="alv"><div class="spin"></div></div></div></div>`;
   $("#bSync").onclick = async () => { toast("Đang đồng bộ cảnh báo…"); await api("/api/sync-all", { method: "POST" }); setTimeout(loadAlarms, 8000); };
   await loadAlarms();
-  S.timer = setInterval(() => !document.hidden && loadAlarms(), 60000);
+  // SỬA (11/11/2026): bỏ tự tải lại 60 giây — chỉ cập nhật khi bấm nút Đồng bộ
 }
 async function loadAlarms() {
   let L;
@@ -1042,8 +1042,9 @@ function drawStationHeader(st, id) {
   const src = st?.gateway_id ? `${ico("gw", 'style="width:14px;height:14px"')} Gateway` : `${ico("cloud", 'style="width:14px;height:14px"')} ${esc(BRAND[st?.brand] || st?.brand || "")}`;
   el.innerHTML = header(esc(st?.name || "Trạm"), `<span class="pill"><span class="dot ${status || ""}"></span>${STATUS[status] || "…"} <span class="muted">|</span> ${src}</span>`,
     SHARE ? themeBtn() : `<a class="icobtn" href="#/" aria-label="Quay lại">${ico("back")}</a>`,
-    SHARE ? "" : `<button class="icobtn" id="bInfo" aria-label="Thông tin trạm">${ico("user")}</button>`);
+    `<span style="display:inline-flex;gap:8px"><button class="icobtn" id="bUpd" aria-label="Cập nhật" title="Cập nhật">${ico("refresh")}</button>${SHARE ? "" : `<button class="icobtn" id="bInfo" aria-label="Thông tin trạm">${ico("user")}</button>`}</span>`);
   const b = $("#bInfo"); if (b) b.onclick = () => stationInfoSheet();
+  const bu = $("#bUpd"); if (bu) bu.onclick = manualUpdate; // MỚI (11/11/2026): nút Cập nhật thủ công
 }
 async function loadDetail() {
   const path = SHARE ? `/api/public/${SHARE}` : `/api/stations/${S.st.id}/detail`;
@@ -1052,8 +1053,13 @@ async function loadDetail() {
   S.detail = r.detail; S.online = r.online; S.detailErr = r.error || null; S.weather = r.weather ?? null; S.energy = r.energy ?? null;
   return r;
 }
-function liveRefresh(fn, ms) {
-  S.timer = setInterval(async () => { if (document.hidden) return; try { await loadDetail(); fn(); } catch {} }, ms);
+// SỬA (11/11/2026 — người dùng): KHÔNG tự tải lại theo chu kỳ nữa; chỉ ghi nhớ hàm vẽ để nút "Cập nhật" (#bUpd) tải 1 lần rồi vẽ lại.
+function liveRefresh(fn, _ms) { S.redraw = fn; }
+async function manualUpdate() {
+  const b = $("#bUpd"); if (b) b.disabled = true;
+  toast("Đang cập nhật…");
+  try { await loadDetail(); S.redraw && S.redraw(); toast("Đã cập nhật"); } catch (e) { toast(e.message || "Lỗi cập nhật"); }
+  const b2 = $("#bUpd"); if (b2) b2.disabled = false;
 }
 const refreshMs = () => (S.st?.gateway_id ? 5000 : 30000);
 
