@@ -209,6 +209,9 @@ export default {
     await get("station_latest", "/station/latest", { stationId: Number(stationId) });
     await get("station_history_day", "/station/history", { stationId: Number(stationId), granularity: 2, startAt: date, endAt: vnDate(new Date(Date.now() + 86400e3)) });
     const m1 = date.slice(0, 7) + "-01", nm = new Date(m1 + "T00:00:00Z"); nm.setUTCMonth(nm.getUTCMonth() + 1);
+    // MỚI (13/11/2026): xem thô lịch sử theo khung giờ trong ngày (kiểm tra cách gửi nào Deye chấp nhận)
+    await get("station_history_frame_same_day", "/station/history", { stationId: Number(stationId), granularity: 1, startAt: date, endAt: date });
+    await get("station_history_power", "/station/history/power", { stationId: Number(stationId), startTimestamp: Math.floor(new Date(date + "T00:00:00+07:00").getTime() / 1000), endTimestamp: Math.floor(new Date(date + "T23:59:59+07:00").getTime() / 1000) });
     await get("station_history_month", "/station/history", { stationId: Number(stationId), granularity: 2, startAt: m1, endAt: nm.toISOString().slice(0, 10) });
     await get("station_history_year", "/station/history", { stationId: Number(stationId), granularity: 3, startAt: date.slice(0, 4) + "-01", endAt: date.slice(0, 4) + "-12" });
     return { raw: res, token: fresh };
@@ -251,7 +254,24 @@ export default {
       const bars = (h.stationDataItems || []).slice(0, 12).map((it, i) => bar(it, String(i + 1).padStart(2, "0")));
       return { bars, token: fresh };
     }
-    const h = await post(creds, token, "/station/history", { stationId: id, granularity: 1, startAt: date });
+    // SỬA (13/11/2026): Deye trả "invalid param" khi chỉ gửi startAt (granularity 1). Chưa có tài liệu chắc chắn → thử lần lượt các cách gửi,
+    // dùng cách đầu tiên Deye chấp nhận; tất cả đều lỗi thì báo đủ lỗi từng cách (không đoán số liệu).
+    const tries = [
+      ["/station/history", { stationId: id, granularity: 1, startAt: date, endAt: date }],
+      ["/station/history", { stationId: id, granularity: 1, startAt: date, endAt: addDays(date, 1) }],
+      ["/station/history/power", { stationId: id, startTimestamp: Math.floor(new Date(date + "T00:00:00+07:00").getTime() / 1000), endTimestamp: Math.floor(new Date(date + "T23:59:59+07:00").getTime() / 1000) }],
+    ];
+    let h = null;
+    const errs = [];
+    for (const [path, body] of tries) {
+      try {
+        const r = await post(creds, token, path, body);
+        h ??= r;
+        if ((r.stationDataItems || []).length) { h = r; break; }
+        errs.push(`${path}: trả rỗng`);
+      } catch (e) { errs.push(`${path} ${JSON.stringify(body).replace(/"stationId":\d+,?/, "")}: ${e.message || e}`); }
+    }
+    if (!h) throw new Error(errs.join(" | "));
     const points = (h.stationDataItems || []).map((it) => {
       const ts = isoFromAny(it.timeStamp);
       const pv = num(it.generationPower), load = num(it.consumptionPower);
