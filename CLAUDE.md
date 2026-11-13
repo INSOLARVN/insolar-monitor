@@ -73,6 +73,8 @@ App giám sát + cài đặt điện mặt trời **đa hãng** (Deye, Solis, So
 
 20. **Chỉ cập nhật khi bấm (11/11/2026, người dùng yêu cầu):** cron 5 phút ghi D1 ~90.000 dòng/ngày (readings + stations + details + alarms), gần chạm 100K/ngày → `crons = []`; giao diện bỏ mọi `setInterval` tự tải lại (danh sách 30s, cảnh báo 60s, trạm 5–30s). Danh sách/Cảnh báo: nút Đồng bộ (`/api/sync-all`). Trang trạm: nút Cập nhật `#bUpd` (`manualUpdate`). Lịch sử `readings` chỉ có điểm tại các lần bấm đồng bộ.
 
+21. **Top BMS – BMS pin cao áp (13/11/2026):** hãng gửi tài liệu "HV BMS Modbus Protocol V3.0" (Modbus RTU 9600 8N1, địa chỉ 1, FC03): 0x40–0x5A trạng thái (áp 0,1V, dòng 0,1A **+ = sạc**, SOC 0,1%, cell max/min, nhiệt, rơ-le, cảnh báo/bảo vệ theo bit, Ah 10mAh, chu kỳ), 0x7E–0xB8 tham số (0x80 số cell, 0x81 số cảm biến), 0x100… nhiệt từng cảm biến, 0x200… áp từng cell (mV). `bms.js`: `decodeTopBms`, `topbmsRequests(info)` — lần hỏi đầu đọc số cell/cảm biến, hub lưu `bmsInfo` rồi gửi lại cấu hình để hỏi đủ cell (khối 64). Firmware **không cần sửa** (gửi nguyên gói hex qua cổng BMS GPIO26/27/25). Profile inverter `none` = "Không đọc inverter (chỉ đọc BMS)"; hub ghi D1 5 phút/lần theo gói BMS khi profile `none`. Công suất pin = áp × dòng BMS (`battery.power_calc`, ghi "≈"). 0xA5/0xA6 tài liệu ghi đơn vị 0,1% nghi chép nhầm → hiện số thô. Module RS485 người dùng: chân EN/VCC/RXD/TXD/GND + A/B → TXD→D26, RXD→D27, EN→D25 (không đọc được thì đổi D26↔D27). **Chưa thử với pin thật.**
+
 ## Việc còn lại / tiếp theo
 - Kết nối API thật của Deye Cloud, SolisCloud, Solarman và các hãng khác (người dùng đã có tài khoản Deye, Solarman với nhiều hệ đã lắp).
 - Chủ hệ thống hiện **chưa có email/SĐT** → vào Tài khoản thêm email để dùng quên mật khẩu.

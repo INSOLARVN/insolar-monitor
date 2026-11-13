@@ -1,7 +1,9 @@
 // Giải mã / mã hóa thanh ghi Modbus theo profile inverter.
 // Port sang JavaScript từ parser của ha-solarman (MIT © David Rapan & Contributors),
 // giữ nguyên quy tắc (rule 1..10, scale, offset, mask, lookup, sensors ghép…).
-import { PROFILES } from "../profiles/index.js";
+import { PROFILES as HA_PROFILES } from "../profiles/index.js";
+// MỚI (13/11/2026): "none" = gateway chỉ đọc BMS, không đọc inverter (cổng RS485 inverter để trống, không mất thời gian chờ)
+const PROFILES = { none: { id: "none", label: "Không đọc inverter (chỉ đọc BMS)", manufacturer: "", parameters: [] }, ...HA_PROFILES };
 
 const DEF = { update_interval: 60, code: 0x03, min_span: 25, max_size: 125, digits: 6 };
 const PARAM_KEYS = { mod: "mod", mppt: "mppt", l: "phase", pack: "pack" };

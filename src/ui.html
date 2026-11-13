@@ -1430,7 +1430,7 @@ function overviewHtml(d, status) {
       ...(S.weather?.approx ? [["Thời tiết", "-- (trạm chưa có toạ độ)"]] /* SỬA (08/11/2026): không lấy thời tiết TP Thanh Hoá thay cho trạm */ : wxInfo(S.weather) ? [[wxInfo(S.weather).byPv ? "Thời tiết (theo sản lượng)" : "Thời tiết dự báo", wxInfo(S.weather).t + (isNum(S.weather.temp) ? " · " + Math.round(S.weather.temp) + "°" : "") + (isNum(S.weather.radiation) ? " · " + Math.round(S.weather.radiation) + "W/m²" : "")] /* SỬA (08/11/2026): nhãn ngắn — "≈TH" = lấy theo TP Thanh Hoá vì trạm chưa có toạ độ */] : []), ["Sản lượng ngày", fK(d.pv.today_kwh), "ce"]])}
     ${qcard("var(--home)", "var(--home-soft)", "home", d.load.calc ? "Tải nhà ≈ (tính)" : "Tải nhà", d.load.power, [...phaseRows(d.load.phases, "Áp / dòng") /* SỬA (08/11/2026): không lấy áp/dòng đầu ra biến tần thay cho tải nhà */,
       ["Dự phòng UPS/EPS", fW(d.load.ups_power)], ["Tiêu thụ ngày", fK(d.load.today_kwh), "ce"]])}
-    ${qcard("var(--bat)", "var(--bat-soft)", "battery", "Pin lưu trữ", d.battery.power, [["Áp / dòng", `${fV(d.battery.voltage)} / ${d.battery.current_calc ? "≈" : ""}${fA(d.battery.current)}`, "cv"],
+    ${qcard("var(--bat)", "var(--bat-soft)", "battery", d.battery.power_calc ? "Pin lưu trữ ≈ (áp × dòng BMS)" : "Pin lưu trữ", d.battery.power, [["Áp / dòng", `${fV(d.battery.voltage)} / ${d.battery.current_calc ? "≈" : ""}${fA(d.battery.current)}`, "cv"],
       ["SOC / SOH", `${isNum(d.battery.soc) ? Math.round(d.battery.soc) + "%" : "--"} · ${isNum(d.battery.soh) ? Math.round(d.battery.soh) + "%" : "--"}`],
       ["Sạc ngày", fK(d.battery.today_charge), "cg"], ["Xả ngày", fK(d.battery.today_discharge), "ce"]])}
     ${qcard("var(--grid)", "var(--grid-soft)", "tower", "Điện lưới", gp, [...phaseRows(d.grid.phases, "Áp / dòng"), ["Tần số", isNum(d.grid.freq) ? nf(d.grid.freq, 2) + " Hz" : "--"],
@@ -1539,7 +1539,7 @@ async function viewBattery() {
     if (isNum(b.cycles_total) && gs.length < 3) gs.push(ring(b.cycles_total, 6000, "var(--sun)", nf(b.cycles_total, 0), "chu kỳ", "Chu kỳ"));
     const capTxt = isNum(b.capacity_ah) ? nf(b.capacity_ah, 0) + " Ah" : isNum(b.capacity_kwh) ? nf(b.capacity_kwh, 1) + " kWh" : isNum(S.st?.battery_kwh) ? nf(S.st.battery_kwh, 1) + " kWh" : null;
     // SỬA (07/11/2026): chỉ hiện ô có số liệu — không còn ô "--"
-    const cells = [["Điện áp", isNum(b.voltage) ? fV(b.voltage) : null, "cv"], ["Dòng", isNum(b.current) ? fA(b.current) : null, "cv"], ["Công suất", isNum(b.power) ? fW(b.power) : null, "cw"],
+    const cells = [["Điện áp", isNum(b.voltage) ? fV(b.voltage) : null, "cv"], ["Dòng", isNum(b.current) ? fA(b.current) : null, "cv"], [b.power_calc ? "Công suất ≈ (áp × dòng BMS)" : "Công suất", isNum(b.power) ? fW(b.power) : null, "cw"],
       ["Sạc hôm nay", isNum(b.today_charge) ? fK(b.today_charge) : null, "cg"], ["Xả hôm nay", isNum(b.today_discharge) ? fK(b.today_discharge) : null, "ce"], ["Dung lượng", capTxt, ""]].filter((c) => c[1] !== null);
     const has = (x) => x !== null && x !== undefined && x !== "";
     const both = (a, c, f) => (has(a) && has(c) ? `${f(a)} / ${f(c)}` : has(a) ? f(a) : has(c) ? f(c) : null);
@@ -1566,13 +1566,25 @@ async function viewBattery() {
       }).join("")}</div>
       <div class="plist mt">
         <div class="prow"><span>Nhiệt độ cảm biến</span><b>${(bms.temperatures || []).map((t) => nf(t, 1) + "°C").join(" · ") || "--"}</b></div>
-        <div class="prow"><span>MOS sạc / xả</span><b>${bms.charge_mos === undefined ? "--" : (bms.charge_mos ? "Bật" : "Tắt") + " / " + (bms.discharge_mos ? "Bật" : "Tắt")}</b></div>
+        ${bms.charge_mos === undefined ? "" : `<div class="prow"><span>MOS sạc / xả</span><b>${(bms.charge_mos ? "Bật" : "Tắt") + " / " + (bms.discharge_mos ? "Bật" : "Tắt")}</b></div>`}
+        ${bms.state ? `<div class="prow"><span>Trạng thái BMS</span><b style="color:${bms.state === "Bình thường" ? "var(--bat)" : "var(--danger)"}">${esc(bms.state)}</b></div>` : ""}
+        ${isNum(bms.voltage) ? `<div class="prow"><span>Áp tổng / dòng (BMS)</span><b>${fV(bms.voltage)} · ${isNum(bms.current) ? fA(Math.abs(bms.current)) + (bms.current_charge_positive && bms.current ? (bms.current > 0 ? " sạc" : " xả") : "") : "--"}</b></div>` : ""}
+        ${isNum(bms.soc) && bms.current_charge_positive ? `<div class="prow"><span>SOC (BMS)</span><b>${nf(bms.soc, 1)}%</b></div>` : ""}
+        ${isNum(bms.charge_limit) ? `<div class="prow"><span>Dòng sạc / xả cho phép</span><b>${fA(bms.charge_limit)} / ${fA(bms.discharge_limit)}</b></div>` : ""}
+        ${isNum(bms.temp_max) ? `<div class="prow"><span>Nhiệt cao nhất / thấp nhất</span><b>${bms.temp_max}°C (cảm biến ${bms.temp_max_no}) · ${bms.temp_min}°C (cảm biến ${bms.temp_min_no})</b></div>` : ""}
         <div class="prow"><span>Chu kỳ</span><b>${bms.cycles ?? "--"}</b></div>
         <div class="prow"><span>Còn lại / định mức</span><b>${isNum(bms.remaining_ah) ? nf(bms.remaining_ah, 1) : "--"} / ${isNum(bms.capacity_ah) ? nf(bms.capacity_ah, 0) : "--"} Ah</b></div>
-        <div class="prow"><span>Đang cân bằng</span><b>${(bms.balancing || []).length ? "Cell " + bms.balancing.join(", ") : "Không"}</b></div>
-        <div class="prow"><span>Bảo vệ</span><b>${(bms.protections || []).length ? bms.protections.join(", ") : "Bình thường"}</b></div>
+        ${isNum(bms.full_ah) ? `<div class="prow"><span>Dung lượng đầy thực tế (BMS)</span><b>${nf(bms.full_ah, 1)} Ah</b></div>` : ""}
+        ${bms.relays ? `<div class="prow"><span>Rơ-le đang đóng</span><b>${bms.relays.filter((r) => r.on).map((r) => r.no).join(", ") || "Không"}</b></div>` : ""}
+        ${bms.balancing ? `<div class="prow"><span>Đang cân bằng</span><b>${bms.balancing.length ? "Cell " + bms.balancing.join(", ") : "Không"}</b></div>` : ""}
+        ${bms.alarms ? `<div class="prow"><span>Cảnh báo</span><b style="${bms.alarms.length ? "color:var(--danger)" : ""}">${bms.alarms.length ? esc(bms.alarms.join(", ")) : "Không"}</b></div>` : ""}
+        <div class="prow"><span>Bảo vệ</span><b style="${(bms.protections || []).length ? "color:var(--danger)" : ""}">${(bms.protections || []).length ? esc(bms.protections.join(", ")) : "Bình thường"}</b></div>
         ${bms.production_date ? `<div class="prow"><span>Ngày sản xuất / phiên bản</span><b>${esc(bms.production_date)} · v${esc(bms.sw_version || "")}</b></div>` : ""}
-      </div></div>`;
+        ${bms.hw_version ? `<div class="prow"><span>Phiên bản phần cứng / phần mềm</span><b>${esc(bms.hw_version)} · ${esc(bms.sw_version || "--")}</b></div>` : ""}
+      </div>
+      ${(bms.settings || []).length ? `<details class="grp" style="box-shadow:none;background:var(--card2)"><summary>Thông số cài đặt BMS (chỉ đọc) <span class="tag">${bms.settings.length}</span></summary><div class="in plist">
+        ${bms.settings.map((x) => `<div class="prow"><span>${esc(x.name)}</span><b>${String(x.value).replace(".", ",")} ${esc(x.uom)}</b></div>`).join("")}</div></details>` : ""}
+      </div>`;
     }
     // CAN
     if (can) {
@@ -1930,7 +1942,7 @@ function gatewayForm(g) {
     <div class="row2" id="g_v5" ${g.transport === "solarman_v5" ? "" : 'style="display:none"'}><div class="field"><label for="g_v5h">IP dongle</label><input class="inp" id="g_v5h" value="${esc(g.v5_host || "")}" placeholder="192.168.1.50"></div>
     <div class="field"><label for="g_v5s">Serial dongle</label><input class="inp" id="g_v5s" inputmode="numeric" value="${esc(g.v5_serial || "")}" placeholder="27xxxxxxxx"></div></div>
     <div class="row2"><div class="field"><label for="g_poll">Chu kỳ đọc (giây)</label><input class="inp" id="g_poll" type="number" min="5" max="300" value="${g.poll}"></div>
-    <div class="field"><label for="g_bms">BMS đọc từng cell</label><select class="inp" id="g_bms"><option value="">Không</option><option value="jbd" ${g.bms_kind === "jbd" ? "selected" : ""}>JBD / Xiaoxiang</option><option value="daly" ${g.bms_kind === "daly" ? "selected" : ""}>Daly</option></select></div></div>
+    <div class="field"><label for="g_bms">BMS đọc từng cell</label><select class="inp" id="g_bms"><option value="">Không</option><option value="jbd" ${g.bms_kind === "jbd" ? "selected" : ""}>JBD / Xiaoxiang</option><option value="daly" ${g.bms_kind === "daly" ? "selected" : ""}>Daly</option><option value="topbms" ${g.bms_kind === "topbms" ? "selected" : ""}>Top BMS (pin cao áp)</option></select></div></div>
     <div class="row2"><div class="field"><label for="g_bmst">Kết nối BMS</label><select class="inp" id="g_bmst"><option value="uart" ${g.bms_transport !== "ble" ? "selected" : ""}>UART / RS485</option><option value="ble" ${g.bms_transport === "ble" ? "selected" : ""}>Bluetooth</option></select></div>
     <div class="field"><label for="g_blen">Tên Bluetooth BMS</label><input class="inp" id="g_blen" value="${esc(g.bms_ble_names || "")}" placeholder="LS2319…, xiaoxiang"></div></div>
     ${!isEdit ? `<div class="row2"><div class="field"><label for="g_kwp">Công suất PV (kWp)</label><input class="inp" id="g_kwp" inputmode="decimal"></div><div class="field"><label for="g_cus">Khách hàng</label><input class="inp" id="g_cus"></div></div>` : ""}

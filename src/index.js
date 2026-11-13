@@ -434,7 +434,7 @@ function cleanGateway(b) {
   for (const k of ["slave", "poll"]) if (k in o) o[k] = Math.max(1, Math.min(k === "poll" ? 300 : 247, Number(o[k]) || 1));
   for (const k of ["can_enabled", "allow_write", "invert_battery", "invert_grid"]) if (k in o) o[k] = o[k] ? 1 : 0;
   if ("transport" in o && !["rs485", "solarman_v5"].includes(o.transport)) o.transport = "rs485";
-  if ("bms_kind" in o && !["jbd", "daly"].includes(o.bms_kind)) o.bms_kind = null;
+  if ("bms_kind" in o && !["jbd", "daly", "topbms"].includes(o.bms_kind)) o.bms_kind = null;
   if ("profile" in o) prepare(o.profile, {}); // ném lỗi nếu profile không tồn tại
   return o;
 }

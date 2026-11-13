@@ -166,6 +166,15 @@ export function mergeBattery(d, can, bms) {
     const b = d.battery;
     if (b.soc === null || b.soc === undefined) b.soc = bms.soc ?? null;
     if (b.voltage === null || b.voltage === undefined) b.voltage = bms.voltage ?? null;
+    // MỚI (13/11/2026): BMS có tài liệu dấu dòng (Top BMS: + = sạc) → đổi sang quy ước app (pin + = xả). Công suất = áp × dòng của BMS (ghi "≈ (tính)").
+    if (bms.current_charge_positive && typeof bms.current === "number" && (b.current === null || b.current === undefined)) {
+      b.current = -bms.current || 0;
+      if ((b.power === null || b.power === undefined) && typeof bms.voltage === "number") { b.power = Math.round(-bms.current * bms.voltage) || 0; b.power_calc = true; }
+    }
+    b.charge_limit ??= bms.charge_limit ?? null;
+    b.discharge_limit ??= bms.discharge_limit ?? null;
+    if ((b.temp === null || b.temp === undefined) && typeof bms.temp_max === "number") b.temp = bms.temp_max;
+    if ((b.capacity_ah === null || b.capacity_ah === undefined) && bms.capacity_ah) b.capacity_ah = bms.capacity_ah;
   }
   return d;
 }

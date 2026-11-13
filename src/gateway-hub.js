@@ -4,7 +4,7 @@ import { DurableObject } from "cloudflare:workers";
 import { prepare, decode, settingsSchema, encodeWrite } from "./lib/modbus-profile.js";
 import { fromModbus, mergeBattery, summary } from "./lib/canonical.js";
 import { decodeCan } from "./lib/can.js";
-import { decodeBms, BMS_REQUESTS } from "./lib/bms.js";
+import { decodeBms, bmsRequests, topbmsInfo } from "./lib/bms.js";
 
 const FLUSH_MS = 5 * 60e3;
 const PERSIST_MS = 60e3;
@@ -20,11 +20,12 @@ export class GatewayHub extends DurableObject {
 
   async load() {
     if (this.loaded) return;
-    const s = await this.ctx.storage.get(["gw", "regs", "can", "bms", "latest", "lastFlush", "canFrames", "bmsFrames"]);
+    const s = await this.ctx.storage.get(["gw", "regs", "can", "bms", "latest", "lastFlush", "canFrames", "bmsFrames", "bmsInfo"]);
     this.gw = s.get("gw") || null;
     this.regs = s.get("regs") || {};
     this.canFrames = s.get("canFrames") || {};
     this.bmsFrames = s.get("bmsFrames") || null;
+    this.bmsInfo = s.get("bmsInfo") || null; // MỚI (13/11/2026): số cell/cảm biến Top BMS báo về
     this.latest = s.get("latest") || null;
     this.lastFlush = s.get("lastFlush") || 0;
     this.lastPersist = Date.now();
@@ -39,7 +40,7 @@ export class GatewayHub extends DurableObject {
     const g = this.gw;
     const prep = prepare(g.profile, JSON.parse(g.params || "{}"));
     const bms = g.bms_kind
-      ? { kind: g.bms_kind, transport: g.bms_transport || "uart", ble_names: (g.bms_ble_names || "").split(",").map((x) => x.trim()).filter(Boolean), requests: BMS_REQUESTS[g.bms_kind] }
+      ? { kind: g.bms_kind, transport: g.bms_transport || "uart", ble_names: (g.bms_ble_names || "").split(",").map((x) => x.trim()).filter(Boolean), requests: bmsRequests(g.bms_kind, this.bmsInfo) }
       : null;
     return {
       t: "config", poll: g.poll || 10, slave: g.slave || 1, requests: prep.requests,
@@ -185,6 +186,15 @@ export class GatewayHub extends DurableObject {
         break;
       case "bms":
         this.bmsFrames = { kind: m.kind, frames: m.frames, ts: now };
+        // MỚI (13/11/2026): Top BMS — biết số cell/cảm biến rồi thì gửi lại cấu hình để gateway hỏi đủ từng cell
+        if (m.kind === "topbms") {
+          const info = topbmsInfo(m.frames);
+          if (info && (info.cells !== this.bmsInfo?.cells || info.temps !== this.bmsInfo?.temps)) {
+            this.bmsInfo = info;
+            await this.ctx.storage.put("bmsInfo", info);
+            this.send(this.config());
+          }
+        }
         break;
       default:
         return;
@@ -194,7 +204,7 @@ export class GatewayHub extends DurableObject {
       this.lastPersist = now;
       await this.ctx.storage.put({ regs: this.regs, canFrames: this.canFrames, bmsFrames: this.bmsFrames, latest: this.latest, gw: this.gw });
     }
-    if (m.t === "modbus" && now - this.lastFlush > FLUSH_MS) {
+    if ((m.t === "modbus" || (m.t === "bms" && this.gw?.profile === "none")) && now - this.lastFlush > FLUSH_MS) {
       this.lastFlush = now;
       await this.ctx.storage.put("lastFlush", now);
       await this.flush();
@@ -207,7 +217,7 @@ export class GatewayHub extends DurableObject {
     const s = summary(d);
     const iso = new Date().toISOString();
     const faulty = d.device.fault && !/^(ok|normal|no fault|none|0|\[\])$/i.test(String(d.device.fault)) && !/^\[?\s*\]?$/.test(String(d.device.fault));
-    const status = faulty || (d.can?.protections?.length) ? "alarm" : "online";
+    const status = faulty || d.can?.protections?.length || d.bms?.protections?.length ? "alarm" : "online"; // SỬA (13/11/2026): tính cả bảo vệ BMS
     const slim = { ...d };
     await this.env.DB.batch([
       this.env.DB.prepare(`UPDATE stations SET status=?2, pv_power_w=?3, load_power_w=?4, grid_power_w=?5, battery_power_w=?6, battery_soc=?7,
